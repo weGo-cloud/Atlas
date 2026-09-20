@@ -1,0 +1,125 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1787210103919,
+      "tag": "0000_foamy_captain_stacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787211635038,
+      "tag": "0001_mature_prima",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787364520015,
+      "tag": "0002_rich_rick_jones",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787429101829,
+      "tag": "0003_serious_hobgoblin",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787514645352,
+      "tag": "0004_magical_triathlon",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787561280708,
+      "tag": "0005_wet_smiling_tiger",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787624960327,
+      "tag": "0006_aspiring_thing",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1787834618896,
+      "tag": "0007_lead_pipeline_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788031215557,
+      "tag": "0008_activities",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1788122891825,
+      "tag": "0009_deals_domain",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1788229473630,
+      "tag": "0010_sales_domain",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1788944963992,
+      "tag": "0011_business_entitlements",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1789020584704,
+      "tag": "0012_subscriptions_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1789020613449,
+      "tag": "0013_business_website_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1789020623447,
+      "tag": "0014_business_drop_plan_and_storefront",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1789281243970,
+      "tag": "0015_mission_030_furniture_vertical",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1789452466604,
+      "tag": "0016_mission_031_marketing_loop",
+      "breakpoints": true
+    }
+  ]
+}
