@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+/*
+  ATLAS DESIGN TOKENS
+  Dark-first, professional, operational SaaS aesthetic.
+  Restrained accents -- no gradients, glow, or glassmorphism.
+*/
+
+:root {
+  /* Surfaces */
+  --background: #0a0b0d;
+  --surface: #111318;
+  --surface-2: #171a20;
+  --overlay: rgba(6, 7, 9, 0.72);
+
+  /* Borders */
+  --border: #23262d;
+  --border-strong: #2e323b;
+
+  /* Text */
+  --foreground: #ecedef;
+  --muted-foreground: #8d93a0;
+  --subtle-foreground: #5c6270;
+
+  /* Brand / primary action */
+  --primary: #4c6fff;
+  --primary-hover: #3d5cf0;
+  --primary-foreground: #f5f6f8;
+
+  /* Semantic */
+  --destructive: #e5484d;
+  --destructive-foreground: #fff8f8;
+  --success: #2fbf71;
+  --warning: #e3a008;
+  --info: #4c9aff;
+
+  /* Atlas Intelligence accent -- reserved for AI-surfaced content only */
+  --intelligence: #e3a008;
+  --intelligence-foreground: #1a1305;
+
+  /* Radius scale */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.25rem;
+
+  /* Elevation -- subtle, flat design with hairline borders */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.4);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+
+  --color-intelligence: var(--intelligence);
+  --color-intelligence-foreground: var(--intelligence-foreground);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+::selection {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* Visible, restrained focus state for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
