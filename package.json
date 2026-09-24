@@ -12,7 +12,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/lib/db/seed.ts",
     "db:seed:furniture": "tsx scripts/seed-furniture-demo.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "assistant:eval": "tsx scripts/eval-assistant.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
