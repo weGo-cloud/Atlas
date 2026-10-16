@@ -24,6 +24,12 @@ export interface SubscriptionRepository {
    * callers still handle null rather than assuming).
    */
   getByBusinessId(businessId: string): Promise<Subscription | null>;
-  create(input: { businessId: string; plan: SubscriptionPlan; status: SubscriptionStatus }): Promise<Subscription>;
+  create(input: {
+    businessId: string;
+    plan: SubscriptionPlan;
+    status: SubscriptionStatus;
+    /** Mission 036 — set when a business is created already trialing. */
+    trialEndsAt?: string | null;
+  }): Promise<Subscription>;
   update(businessId: string, input: UpdateSubscriptionInput): Promise<Subscription | null>;
 }

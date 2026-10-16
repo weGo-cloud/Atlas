@@ -184,7 +184,8 @@ describe("DecisionIntelligenceService", () => {
     const customerRepo = new DatabaseCustomerRepository(BIZ_A);
     const customer = await customerRepo.createCustomer({ name: "A", phone: "0700000001" });
     // Overdue leads to trigger review_overdue_follow_ups (threshold is 3).
-    const overdueDate = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+    // Overdue is measured against the test's injected NOW, never the real clock — using Date.now() here made this test pass or fail depending on the day it ran (it began failing once the real date passed NOW + the lookback).
+    const overdueDate = new Date(new Date(NOW).getTime() - 10 * 24 * 60 * 60 * 1000).toISOString();
     seedLead(BIZ_A, customer.id, overdueDate);
     seedLead(BIZ_A, customer.id, overdueDate);
     const thirdLead = seedLead(BIZ_A, customer.id, overdueDate);

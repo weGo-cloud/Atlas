@@ -146,6 +146,30 @@ describe("changePlan — upgrade/downgrade (Section 24 #6, #7)", () => {
     const businessId = seedBusiness();
     await expect(getService().changePlan(businessId, "pro")).rejects.toBeInstanceOf(NoSubscriptionError);
   });
+
+  // Mission 036 — choosing a plan is how a business comes back after a trial or paid plan ends.
+  it("reactivates an expired subscription on the chosen plan and clears the consumed trial date", async () => {
+    const businessId = seedBusinessWithSubscription("pro", "expired");
+    rawDb.prepare("UPDATE subscriptions SET trial_ends_at = ? WHERE business_id = ?").run("2026-01-01T00:00:00.000Z", businessId);
+    const subscription = await getService().changePlan(businessId, "growth");
+    expect(subscription.plan).toBe("growth");
+    expect(subscription.status).toBe("active");
+    expect(subscription.trialEndsAt).toBeNull();
+    expect(subscription.cancelAtPeriodEnd).toBe(false);
+  });
+
+  it("reactivates a cancelled subscription on the chosen plan", async () => {
+    const businessId = seedBusinessWithSubscription("growth", "cancelled");
+    const subscription = await getService().changePlan(businessId, "pro");
+    expect(subscription).toMatchObject({ plan: "pro", status: "active" });
+  });
+
+  it("never touches inventory rows when reactivating (no data loss)", async () => {
+    const businessId = seedBusinessWithSubscription("pro", "expired");
+    await getService().changePlan(businessId, "starter");
+    const row = rawDb.prepare("SELECT COUNT(*) AS n FROM vehicles WHERE business_id = ?").get(businessId) as { n: number };
+    expect(row.n).toBe(0);
+  });
 });
 
 describe("cancel (Section 24 #8)", () => {

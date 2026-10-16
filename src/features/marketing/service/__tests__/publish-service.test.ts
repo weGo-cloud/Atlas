@@ -28,7 +28,8 @@ let DatabaseMarketingPublicationRepository: typeof PublicationRepoClass;
 let rawDb: Database.Database;
 
 const STARTER_BUSINESS = "biz_publish_starter"; // no marketing_automation capability
-const GROWTH_BUSINESS = "biz_publish_growth"; // has marketing_automation capability
+// Mission 036 — marketing_automation moved from Growth to Pro, so the entitled fixture business is now on the Pro plan. (Constant name kept to avoid churn across this file.)
+const GROWTH_BUSINESS = "biz_publish_growth"; // has marketing_automation capability (Pro plan)
 
 beforeAll(async () => {
   process.env.DATABASE_URL = `file:${testDbPath}`;
@@ -42,7 +43,7 @@ beforeAll(async () => {
   const now = new Date().toISOString();
   for (const [id, plan] of [
     [STARTER_BUSINESS, "starter"],
-    [GROWTH_BUSINESS, "growth"],
+    [GROWTH_BUSINESS, "pro"],
   ] as const) {
     setupDb
       .prepare("INSERT INTO businesses (id, name, vertical, created_at, updated_at) VALUES (?, ?, 'auto', ?, ?)")
@@ -126,7 +127,20 @@ describe("Entitlement gating (Mission 031, Section 22)", () => {
     expect(result.error.code).toBe("FORBIDDEN");
   });
 
-  it("allows publish for a business with marketing_automation (growth plan)", async () => {
+  it("rejects publish for a Growth business — marketing_automation is a Pro capability (Mission 036)", async () => {
+    const growthId = "biz_publish_growth_real";
+    const now = new Date().toISOString();
+    rawDb.prepare("INSERT INTO businesses (id, name, vertical, created_at, updated_at) VALUES (?, ?, 'auto', ?, ?)").run(growthId, "Growth Biz", now, now);
+    rawDb
+      .prepare("INSERT INTO subscriptions (id, business_id, plan, status, created_at, updated_at) VALUES (?, ?, 'growth', 'active', ?, ?)")
+      .run(`sub_${growthId}`, growthId, now, now);
+    const contentId = seedContent(growthId);
+    const result = await getService(growthId, { meta: stubProvider("meta", "succeed") }).publish(contentId, "meta");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("FORBIDDEN");
+  });
+
+  it("allows publish for a business with marketing_automation (pro plan)", async () => {
     const contentId = seedContent(GROWTH_BUSINESS);
     const service = getService(GROWTH_BUSINESS, { meta: stubProvider("meta", "succeed") });
     const result = await service.publish(contentId, "meta");

@@ -15,8 +15,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { changePlanAction, cancelSubscriptionAction, resumeSubscriptionAction } from "../actions/subscription-actions";
-import type { PlanDefinition, SubscriptionPlan } from "../domain/plan";
-import type { Subscription } from "../domain/subscription";
+import { isPaidPlan, type LimitKey, type PlanDefinition, type SubscriptionPlan } from "../domain/plan";
+import type { Subscription, SubscriptionStatus } from "../domain/subscription";
 
 /**
  * Mission 029, Section 4/15 — the minimal commercial UI: current
@@ -35,14 +35,30 @@ import type { Subscription } from "../domain/subscription";
  */
 export function PlanSettings({
   subscription,
+  storedStatus,
   plans,
-  vehicleUsage,
+  itemUsage,
+  itemLabel,
+  limitKey,
   statusMessage,
+  noticeMessage,
+  noticeKind,
+  selfServePaidUpgrades,
+  upgradeContactCopy,
 }: {
+  /** Mission 036 — the *effective* subscription (trial/ended plans already resolved to the Starter fallback). */
   subscription: Subscription | null;
+  /** The stored row's status, used only to tell a pending-cancellation from an ended plan. */
+  storedStatus: SubscriptionStatus | null;
   plans: PlanDefinition[];
-  vehicleUsage: number;
+  itemUsage: number;
+  itemLabel: string;
+  limitKey: LimitKey;
   statusMessage: string | null;
+  noticeMessage: string | null;
+  noticeKind: "trial_active" | "trial_ended" | "subscription_ended" | null;
+  selfServePaidUpgrades: boolean;
+  upgradeContactCopy: string;
 }) {
   const [current, setCurrent] = useState(subscription);
   const [pendingDowngrade, setPendingDowngrade] = useState<PlanDefinition | null>(null);
@@ -67,9 +83,9 @@ export function PlanSettings({
 
   function handleSelectPlan(plan: PlanDefinition) {
     if (plan.id === currentPlanId || isPending) return;
-    const newLimit = plan.limits.vehicles;
+    const newLimit = plan.limits[limitKey];
     const isDowngradeOverLimit =
-      typeof newLimit === "number" && plan.order < currentDefinition.order && vehicleUsage > newLimit;
+      typeof newLimit === "number" && plan.order < currentDefinition.order && itemUsage > newLimit;
     if (isDowngradeOverLimit) {
       setPendingDowngrade(plan);
       return;
@@ -95,8 +111,9 @@ export function PlanSettings({
     });
   }
 
-  const isCancelled = current?.status === "cancelled" || current?.status === "expired";
-  const isPendingCancellation = Boolean(current?.cancelAtPeriodEnd) && !isCancelled;
+  // Mission 036 — an ended trial/plan is not "resumable" from here (it resolves to the free Starter plan and comes back through an upgrade); only a pending cancel-at-period-end can be undone self-serve.
+  const hasEnded = storedStatus === "cancelled" || storedStatus === "expired";
+  const isPendingCancellation = Boolean(current?.cancelAtPeriodEnd) && !hasEnded;
 
   return (
     <div className="flex flex-col gap-4">
@@ -108,6 +125,9 @@ export function PlanSettings({
           </Badge>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
+          {noticeMessage ? (
+            <p className={`text-sm ${noticeKind === "trial_active" ? "text-foreground" : "text-warning"}`}>{noticeMessage}</p>
+          ) : null}
           {statusMessage ? <p className="text-sm text-warning">{statusMessage}</p> : null}
           {isPendingCancellation ? (
             <p className="text-sm text-muted-foreground">
@@ -117,17 +137,17 @@ export function PlanSettings({
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
           <div className="text-sm text-muted-foreground">
-            Vehicles: {vehicleUsage}
-            {currentDefinition.limits.vehicles !== undefined ? ` / ${currentDefinition.limits.vehicles}` : " (unlimited)"}
+            {itemLabel}: {itemUsage}
+            {currentDefinition.limits[limitKey] !== undefined ? ` / ${currentDefinition.limits[limitKey]}` : " (unlimited)"}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {isCancelled || isPendingCancellation ? (
+            {isPendingCancellation ? (
               <Button variant="default" onClick={runResume} disabled={isPending}>
                 {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Resume subscription
+                Keep my subscription
               </Button>
-            ) : (
+            ) : hasEnded || currentPlanId === "starter" ? null : (
               <>
                 <Button variant="outline" onClick={() => runCancel("at_period_end")} disabled={isPending}>
                   Cancel at period end
@@ -157,20 +177,24 @@ export function PlanSettings({
               </div>
               <p className="text-sm text-muted-foreground">{plan.description}</p>
               <p className="text-xs text-muted-foreground">
-                {plan.pricing.configured ? `${plan.pricing.amount} ${plan.pricing.currency}/${plan.pricing.interval}` : "Pricing not yet configured"}
+                {plan.pricing.configured
+                  ? plan.pricing.amount === 0
+                    ? "Free"
+                    : `${plan.pricing.currency} ${plan.pricing.amount.toLocaleString("en-KE")}/${plan.pricing.interval === "monthly" ? "month" : plan.pricing.interval}`
+                  : "Contact us for pricing"}
               </p>
               <ul className="flex flex-col gap-1 text-sm">
                 <li className="flex items-center gap-1.5">
-                  {plan.limits.vehicles !== undefined ? (
-                    <span>{plan.limits.vehicles} vehicles</span>
+                  {plan.limits[limitKey] !== undefined ? (
+                    <span>{plan.limits[limitKey]} items</span>
                   ) : (
-                    <span>Unlimited vehicles</span>
+                    <span>Unlimited items</span>
                   )}
                 </li>
                 {plan.capabilities.size > 0 ? (
                   [...plan.capabilities].map((capability) => (
                     <li key={capability} className="flex items-center gap-1.5">
-                      <Check className="h-3.5 w-3.5 text-success" /> {capability.replace("_", " ")}
+                      <Check className="h-3.5 w-3.5 text-success" /> {capability.replaceAll("_", " ")}
                     </li>
                   ))
                 ) : (
@@ -179,17 +203,21 @@ export function PlanSettings({
                   </li>
                 )}
               </ul>
-              <Button
-                variant={plan.id === currentPlanId ? "outline" : "default"}
-                disabled={plan.id === currentPlanId || plan.status !== "active" || isPending}
-                onClick={() => handleSelectPlan(plan)}
-              >
-                {plan.id === currentPlanId
-                  ? "Current plan"
-                  : plan.order > currentDefinition.order
-                    ? "Upgrade"
-                    : "Downgrade"}
-              </Button>
+              {!selfServePaidUpgrades && isPaidPlan(plan.id) && plan.id !== currentPlanId ? (
+                <p className="text-xs text-muted-foreground">{upgradeContactCopy}</p>
+              ) : (
+                <Button
+                  variant={plan.id === currentPlanId ? "outline" : "default"}
+                  disabled={plan.id === currentPlanId || plan.status !== "active" || isPending}
+                  onClick={() => handleSelectPlan(plan)}
+                >
+                  {plan.id === currentPlanId
+                    ? "Current plan"
+                    : plan.order > currentDefinition.order
+                      ? "Upgrade"
+                      : "Downgrade"}
+                </Button>
+              )}
             </div>
           ))}
         </CardContent>
@@ -200,9 +228,9 @@ export function PlanSettings({
           <DialogHeader>
             <DialogTitle>Downgrade to {pendingDowngrade?.name}?</DialogTitle>
             <DialogDescription>
-              Your current inventory ({vehicleUsage} vehicles) exceeds the {pendingDowngrade?.name} plan&apos;s limit
-              of {pendingDowngrade?.limits.vehicles} vehicles. Existing vehicles will remain stored, but adding new
-              vehicles will be restricted until usage is within the plan limit.
+              Your current inventory ({itemUsage} items) exceeds the {pendingDowngrade?.name} plan&apos;s limit of{" "}
+              {pendingDowngrade?.limits[limitKey]} items. Everything you have stays stored, but adding new items
+              will be restricted until you are within the plan limit.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

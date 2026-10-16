@@ -46,6 +46,11 @@ export class PlanNotAssignableError extends Error {
 export class SubscriptionLifecycleService {
   constructor(private readonly repository: SubscriptionRepository) {}
 
+  /** Mission 036 — the stored subscription row, or null. Read-only; used by action guards. */
+  async getCurrent(businessId: string): Promise<Subscription | null> {
+    return this.repository.getByBusinessId(businessId);
+  }
+
   /** Idempotent subscription creation — the entry point for a brand-new business. Returns the existing row untouched if one already exists (never overwrites an in-progress trial/paid subscription just because signup ran twice). */
   async getOrCreate(businessId: string, plan: SubscriptionPlan): Promise<Subscription> {
     const existing = await this.repository.getByBusinessId(businessId);
@@ -97,8 +102,12 @@ export class SubscriptionLifecycleService {
    * attempt, not enforced here.
    */
   async changePlan(businessId: string, plan: SubscriptionPlan): Promise<Subscription> {
-    await this.requireSubscription(businessId);
+    const subscription = await this.requireSubscription(businessId);
     if (!isPlanAssignable(plan)) throw new PlanNotAssignableError(plan);
+    // Mission 036 — choosing a plan after a trial or paid plan has ended is how a business comes back: the stored `expired`/`cancelled` row becomes `active` on the chosen plan (payment is still collected manually for now). The trial end date is cleared because the trial is consumed. Without this the business would keep resolving to the free Starter fallback no matter which plan was picked.
+    if (subscription.status === "expired" || subscription.status === "cancelled") {
+      return this.persist(businessId, { plan, status: "active", cancelAtPeriodEnd: false, trialEndsAt: null });
+    }
     return this.persist(businessId, { plan });
   }
 

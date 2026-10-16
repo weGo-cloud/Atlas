@@ -16,7 +16,12 @@ export class DatabaseSubscriptionRepository implements SubscriptionRepository {
     return rows[0] ? toSubscription(rows[0]) : null;
   }
 
-  async create(input: { businessId: string; plan: SubscriptionPlan; status: SubscriptionStatus }): Promise<Subscription> {
+  async create(input: {
+    businessId: string;
+    plan: SubscriptionPlan;
+    status: SubscriptionStatus;
+    trialEndsAt?: string | null;
+  }): Promise<Subscription> {
     const now = new Date().toISOString();
     const id = generateId();
 
@@ -25,6 +30,7 @@ export class DatabaseSubscriptionRepository implements SubscriptionRepository {
       businessId: input.businessId,
       plan: input.plan,
       status: input.status,
+      trialEndsAt: input.trialEndsAt ?? null,
       createdAt: now,
       updatedAt: now,
     });

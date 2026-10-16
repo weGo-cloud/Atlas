@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  EVEREST_MONTHLY_MESSAGE_LIMIT,
   CAPABILITIES,
   LIMIT_KEYS,
+  STARTER_ITEM_LIMIT,
   SUBSCRIPTION_PLANS,
   capabilitiesFor,
   hasCapability,
   isAssignableStatus,
+  isPaidPlan,
   isPlanAssignable,
   isSubscriptionPlan,
   limitFor,
@@ -34,9 +37,18 @@ describe("hasCapability / PLANS", () => {
     }
   });
 
-  it("growth has the storefront but not external integration", () => {
+  // Mission 036 — Growth now includes the external-integration API (the website/chatbot connection); marketing_automation and the assistant moved to Pro.
+  it("growth has the storefront and the external integration but not marketing automation or the assistant", () => {
     expect(hasCapability("growth", "storefront")).toBe(true);
-    expect(hasCapability("growth", "external_integration")).toBe(false);
+    expect(hasCapability("growth", "external_integration")).toBe(true);
+    expect(hasCapability("growth", "marketing_automation")).toBe(false);
+    expect(hasCapability("growth", "everest")).toBe(false);
+  });
+
+  it("starter has no add-on capabilities", () => {
+    for (const capability of CAPABILITIES) {
+      expect(hasCapability("starter", capability)).toBe(false);
+    }
   });
 
   it("pro has every declared capability (cumulative tiers)", () => {
@@ -52,14 +64,22 @@ describe("capabilitiesFor", () => {
   });
 
   it("returns exactly the capabilities a plan is entitled to", () => {
-    expect(new Set(capabilitiesFor("growth"))).toEqual(new Set(["storefront", "marketing_automation"]));
+    expect(new Set(capabilitiesFor("growth"))).toEqual(new Set(["storefront", "external_integration"]));
     expect(new Set(capabilitiesFor("pro"))).toEqual(new Set(CAPABILITIES));
   });
 });
 
 describe("limitFor / usage limits", () => {
-  it("starter has a finite vehicle limit", () => {
-    expect(limitFor("starter", "vehicles")).toBe(50);
+  // Mission 036 — Starter is the free tier: 30 items per vertical.
+  it("starter has a finite item limit of STARTER_ITEM_LIMIT for both verticals", () => {
+    expect(limitFor("starter", "vehicles")).toBe(STARTER_ITEM_LIMIT);
+    expect(limitFor("starter", "furniture_products")).toBe(STARTER_ITEM_LIMIT);
+    expect(STARTER_ITEM_LIMIT).toBe(30);
+  });
+
+  it("Everest messages are capped on Pro and not offered on lower plans", () => {
+    expect(limitFor("pro", "everest_messages")).toBe(EVEREST_MONTHLY_MESSAGE_LIMIT);
+    expect(limitFor("starter", "everest_messages")).toBeNull();
   });
 
   it("growth has a higher finite vehicle limit than starter", () => {
@@ -96,10 +116,17 @@ describe("planDefinition", () => {
     expect(first).toEqual(second);
   });
 
-  it("Mission 029, Section 3 — never fabricates a price: every shipped plan is marked not-configured", () => {
-    for (const plan of SUBSCRIPTION_PLANS) {
-      expect(planDefinition(plan).pricing.configured).toBe(false);
-    }
+  // Mission 036 — prices are now the owner's configured decision (Growth KES 5,000, Pro KES 13,000; Starter free). Nothing is inferred: a plan without an owner-supplied number would still be `configured: false`.
+  it("Mission 036 — prices are the owner-configured values", () => {
+    expect(planDefinition("starter").pricing).toEqual({ configured: true, amount: 0, currency: "KES", interval: "monthly" });
+    expect(planDefinition("growth").pricing).toEqual({ configured: true, amount: 5000, currency: "KES", interval: "monthly" });
+    expect(planDefinition("pro").pricing).toEqual({ configured: true, amount: 13000, currency: "KES", interval: "monthly" });
+  });
+
+  it("Mission 036 — isPaidPlan is true only for plans priced above zero", () => {
+    expect(isPaidPlan("starter")).toBe(false);
+    expect(isPaidPlan("growth")).toBe(true);
+    expect(isPaidPlan("pro")).toBe(true);
   });
 
   it("Mission 029, Section 3 — every plan has a factual, non-empty description", () => {

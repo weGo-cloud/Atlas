@@ -5,7 +5,7 @@ const rawUrl = process.env.DATABASE_URL ?? "file:./db/dev.db";
 const dbPath = rawUrl.startsWith("file:") ? rawUrl.slice(5) : rawUrl;
 
 export default defineConfig({
-  schema: "./src/lib/db/schema.ts",
+  schema: ["./src/lib/db/schema.ts", "./src/lib/db/schema-everest.ts"],
   out: "./src/lib/db/migrations",
   dialect: "sqlite",
   dbCredentials: {

@@ -1,7 +1,7 @@
 import { limitFor, type Capability, type LimitKey } from "../domain/plan";
 import { evaluateCapabilityAccess, evaluateLimit, type AccessDecision, type LimitDecision } from "../domain/access";
 import { accessLevelForStatus, type AccessLevel } from "../domain/access-policy";
-import { resolveEffectiveStatus, type Subscription } from "../domain/subscription";
+import { resolveEffectiveSubscription, type EffectiveSubscription, type Subscription } from "../domain/subscription";
 import type { SubscriptionRepository } from "../repository/subscription-repository";
 
 /**
@@ -60,6 +60,18 @@ export class EntitlementService {
   }
 
   /**
+   * Mission 036 — the subscription as it is treated right now, plus
+   * why the free Starter fallback is in effect (if it is). The
+   * settings page and the trial/upgrade banners read this instead of
+   * re-deriving anything from the stored row.
+   */
+  async getEffectiveSubscription(businessId: string, now: Date = new Date()): Promise<EffectiveSubscription | null> {
+    const subscription = await this.subscriptionRepository.getByBusinessId(businessId);
+    if (!subscription) return null;
+    return resolveEffectiveSubscription(subscription, now);
+  }
+
+  /**
    * Mission 029, Section 13/27 — the settings UI's one call for
    * "what tier of access is this business in right now, and what
    * should we tell them about it", instead of re-deriving
@@ -100,7 +112,12 @@ export class EntitlementService {
   }
 }
 
+/**
+ * Mission 036 — every decision in this service goes through
+ * `resolveEffectiveSubscription`, so a trial that has just elapsed (or
+ * a paid plan that has ended) resolves to the free Starter fallback
+ * rather than a locked state. The stored row is untouched.
+ */
 function effectiveSubscription(subscription: Subscription, now: Date): Subscription {
-  const status = resolveEffectiveStatus(subscription, now);
-  return status === subscription.status ? subscription : { ...subscription, status };
+  return resolveEffectiveSubscription(subscription, now).subscription;
 }

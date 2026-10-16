@@ -60,11 +60,11 @@ describe("evaluateLimit", () => {
     const decision = evaluateLimit(subscription({ plan: "starter" }), "vehicles", 10);
     expect(decision.allowed).toBe(true);
     expect(decision.reason).toBe("WITHIN_LIMIT");
-    expect(decision.limit).toBe(50);
+    expect(decision.limit).toBe(30); // Mission 036: Starter is 30 items (was 50).
   });
 
   it("rejects usage at or above the plan's limit", () => {
-    const decision = evaluateLimit(subscription({ plan: "starter" }), "vehicles", 50);
+    const decision = evaluateLimit(subscription({ plan: "starter" }), "vehicles", 30);
     expect(decision.allowed).toBe(false);
     expect(decision.reason).toBe("LIMIT_EXCEEDED");
   });

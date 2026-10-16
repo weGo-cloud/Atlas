@@ -31,7 +31,7 @@ export function isSubscriptionPlan(value: string): value is SubscriptionPlan {
  * architecture change (Section 27: don't build a feature-flag
  * platform for flags nothing uses yet).
  */
-export const CAPABILITIES = ["storefront", "external_integration", "marketing_automation"] as const;
+export const CAPABILITIES = ["storefront", "external_integration", "marketing_automation", "everest"] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
 /**
@@ -40,6 +40,13 @@ export type Capability = (typeof CAPABILITIES)[number];
  * "enforce only limits that are actually needed by existing
  * functionality"), not a speculative limits-for-everything table.
  *
+ * Mission 036 — "everest_messages" is the one monthly (not
+ * cumulative) limit: how many messages a business may send to the
+ * Everest (the in-app assistant) per calendar month. It is enforced by the
+ * Everest feature itself (see features/everest), against the
+ * usage it counts in its own tables, using the same plan-catalog
+ * lookup every other limit uses.
+ *
  * Mission 030 — "furniture_products" is a separate key from
  * "vehicles" rather than a shared, renamed "inventory_items": a
  * business is always exactly one vertical, so the two keys are never
@@ -47,7 +54,7 @@ export type Capability = (typeof CAPABILITIES)[number];
  * means the Furniture vertical's limit can be tuned independently of
  * Auto's without touching Auto's plan numbers at all.
  */
-export const LIMIT_KEYS = ["vehicles", "furniture_products"] as const;
+export const LIMIT_KEYS = ["vehicles", "furniture_products", "everest_messages"] as const;
 export type LimitKey = (typeof LIMIT_KEYS)[number];
 
 /**
@@ -58,6 +65,37 @@ export type LimitKey = (typeof LIMIT_KEYS)[number];
  */
 export const BILLING_INTERVALS = ["monthly", "annual"] as const;
 export type BillingInterval = (typeof BILLING_INTERVALS)[number];
+
+/**
+ * Mission 036 — commercial constants, kept together so the owner can
+ * retune them in one place. Prices are the owner's decision (Growth
+ * KES 5,000/month, Pro KES 13,000/month); nothing here is a billing
+ * integration — plan changes are still made by the owner via
+ * SubscriptionLifecycleService.changePlan and payment is collected
+ * manually for now.
+ */
+export const PLAN_CURRENCY = "KES";
+/** Items a Starter (free) business can hold, per vertical. Only blocks *new* creates; existing rows are never touched (M029's no-data-loss rule). */
+export const STARTER_ITEM_LIMIT = 30;
+/** Length of the full-feature trial a new business starts on. */
+export const TRIAL_DAYS = 14;
+/** Plan a new business's trial runs on — everything on. */
+export const TRIAL_PLAN: SubscriptionPlan = "pro";
+/**
+ * Whether an owner may switch themselves onto a *paid* plan from the
+ * settings page. Atlas has no billing provider yet (payment is
+ * collected manually), so a self-serve "Upgrade" button would hand out
+ * paid plans for free. While this is false, only the Atlas team
+ * switches a business onto a paid plan (see `scripts/set-plan.ts`);
+ * owners can still downgrade to Starter and cancel on their own. Flip
+ * to true only once a billing provider confirms payment before
+ * `changePlan` runs.
+ */
+export const SELF_SERVE_PAID_UPGRADES = false;
+/** Shown wherever an upgrade is offered while self-serve upgrades are off. Edit to the real contact route. */
+export const UPGRADE_CONTACT_COPY = "Contact the Atlas team to upgrade — we'll switch your plan once payment is arranged.";
+/** Messages per calendar month a Pro (or trial) business may send to Everest. Bounds AI cost per client. */
+export const EVEREST_MONTHLY_MESSAGE_LIMIT = 500;
 
 /**
  * Mission 029, Section 3 — "if actual prices do not yet exist,
@@ -120,35 +158,37 @@ const PLANS: Record<SubscriptionPlan, PlanDefinition> = {
   starter: {
     id: "starter",
     name: "Starter",
-    description: "Core inventory and CRM for a single-location dealership getting started with Atlas.",
+    description: "Free. Inventory, leads, deals and customers for a single business, up to 30 items.",
     status: "active",
     order: 0,
     capabilities: new Set([]),
-    limits: { vehicles: 50, furniture_products: 50 },
+    limits: { vehicles: STARTER_ITEM_LIMIT, furniture_products: STARTER_ITEM_LIMIT },
     billingIntervals: BILLING_INTERVALS,
-    pricing: { configured: false },
+    // Mission 036 — Starter is the free tier every business falls back to when a trial or paid plan ends. Amount 0 is a real price (free), not an unconfigured one.
+    pricing: { configured: true, amount: 0, currency: PLAN_CURRENCY, interval: "monthly" },
   },
   growth: {
     id: "growth",
     name: "Growth",
-    description: "Adds the Atlas-hosted public storefront and a higher inventory ceiling for a growing lot.",
+    description: "Adds the Atlas-hosted public storefront and the external-integration API (for a website or chatbot), with up to 250 items.",
     status: "active",
     order: 1,
-    capabilities: new Set(["storefront", "marketing_automation"]),
+    capabilities: new Set(["storefront", "external_integration"]),
     limits: { vehicles: 250, furniture_products: 250 },
     billingIntervals: BILLING_INTERVALS,
-    pricing: { configured: false },
+    pricing: { configured: true, amount: 5000, currency: PLAN_CURRENCY, interval: "monthly" },
   },
   pro: {
     id: "pro",
     name: "Pro",
-    description: "Unlimited vehicles plus the external-integration API for dealers running their own website.",
+    description: "Everything in Growth plus the social media manager and marketing channels, the Everest assistant, and unlimited items.",
     status: "active",
     order: 2,
-    capabilities: new Set(["storefront", "external_integration", "marketing_automation"]),
-    limits: {}, // unlimited
+    capabilities: new Set(["storefront", "external_integration", "marketing_automation", "everest"]),
+    // Items are unlimited on Pro; only Everest's monthly message allowance is capped (see EVEREST_MONTHLY_MESSAGE_LIMIT).
+    limits: { everest_messages: EVEREST_MONTHLY_MESSAGE_LIMIT },
     billingIntervals: BILLING_INTERVALS,
-    pricing: { configured: false },
+    pricing: { configured: true, amount: 13000, currency: PLAN_CURRENCY, interval: "monthly" },
   },
 };
 
@@ -178,4 +218,10 @@ export function capabilitiesFor(plan: SubscriptionPlan): Capability[] {
 /** The plan's limit for a key, or `null` if the plan has no limit for it (unlimited). */
 export function limitFor(plan: SubscriptionPlan, key: LimitKey): number | null {
   return PLANS[plan].limits[key] ?? null;
+}
+
+/** Mission 036 — true for any plan with a configured price above zero. Unconfigured pricing is never treated as paid (and never as free) by this helper. */
+export function isPaidPlan(plan: SubscriptionPlan): boolean {
+  const pricing = PLANS[plan].pricing;
+  return pricing.configured && pricing.amount > 0;
 }

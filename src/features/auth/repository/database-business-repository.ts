@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { businesses, type BusinessRow } from "@/lib/db/schema";
 import { DatabaseSubscriptionRepository } from "../../entitlements/repository/database-subscription-repository";
+import { TRIAL_DAYS, TRIAL_PLAN } from "../../entitlements/domain/plan";
 import type { SubscriptionRepository } from "../../entitlements/repository/subscription-repository";
 import type { Business } from "../domain/business";
 import type { BusinessRepository, UpdateBusinessSettingsInput } from "./business-repository";
@@ -49,10 +50,15 @@ export class DatabaseBusinessRepository implements BusinessRepository {
       updatedAt: now,
     });
 
-    // Mission 028, Section 16 — every new business starts on the
-    // lowest tier, "active" (a real trial-length/date policy is a
-    // billing-provider decision — Section 21 — not modeled here).
-    await this.subscriptionRepository.create({ businessId: id, plan: "starter", status: "active" });
+    // Mission 036 — every new business starts a full-feature trial
+    // (TRIAL_DAYS on TRIAL_PLAN). When it ends the business falls back
+    // to the free Starter plan automatically (see
+    // resolveEffectiveSubscription) — it is never locked out and its
+    // data is never touched. `trialEndsAt` is an explicit timestamp
+    // computed here at the repository boundary, never inside domain
+    // logic.
+    const trialEndsAt = new Date(new Date(now).getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    await this.subscriptionRepository.create({ businessId: id, plan: TRIAL_PLAN, status: "trialing", trialEndsAt });
 
     const created = await this.getById(id);
     if (!created) throw new Error("Failed to read back newly created business.");

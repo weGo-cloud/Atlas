@@ -1,5 +1,8 @@
 import type { SubscriptionPlan } from "./plan";
 
+/** The free tier every business falls back to (kept as a literal here so this module has no runtime dependency on the plan catalog). */
+const FALLBACK_PLAN: SubscriptionPlan = "starter";
+
 /**
  * Mission 028, Section 10 — states that make sense for the current
  * architecture (no payment provider is connected — Section 21 — so
@@ -115,4 +118,48 @@ export function isTrialActive(subscription: Subscription, now: Date): boolean {
     subscription.trialEndsAt !== null &&
     new Date(subscription.trialEndsAt).getTime() > now.getTime()
   );
+}
+
+/**
+ * Mission 036 — why a business is currently on the free fallback plan
+ * rather than the plan its stored row names. `null` means no fallback
+ * is in effect.
+ */
+export type FallbackReason = "trial_ended" | "subscription_ended";
+
+export type EffectiveSubscription = {
+  /** The subscription as it should be treated *right now* — plan and status already resolved against `now`. Every access/limit decision uses this, never the stored row. */
+  subscription: Subscription;
+  /** Set when the stored plan/status was replaced by the free Starter fallback. */
+  fallback: FallbackReason | null;
+};
+
+/**
+ * Mission 036 — "after the trial, fall back to Starter, never lock
+ * the business out."
+ *
+ * Builds on `resolveEffectiveStatus` (still the single place trial
+ * expiry and cancel-at-period-end are evaluated): when the effective
+ * status is `expired` or `cancelled`, the business is treated as an
+ * `active` Starter subscription. `paused` and `past_due` are
+ * unchanged — those need an external signal and keep their existing
+ * meaning (paused is still locked, past_due still grants access).
+ *
+ * A pure projection with `now` passed explicitly, exactly like
+ * `resolveEffectiveStatus`: no cron job is needed for this to take
+ * effect the instant a trial elapses, and nothing is written. The
+ * stored row keeps its honest `expired`/`cancelled` status as history;
+ * `SubscriptionLifecycleService.changePlan` is still the only way
+ * back to a paid plan. Existing data is never touched (M029 Section
+ * 6's no-data-loss rule) — only what new capability and limit checks
+ * return changes.
+ */
+export function resolveEffectiveSubscription(subscription: Subscription, now: Date): EffectiveSubscription {
+  const status = resolveEffectiveStatus(subscription, now);
+  if (status === "expired" || status === "cancelled") {
+    // A subscription that still carries a trial end date never converted to a paid plan (changePlan clears it when a plan is chosen), so its fallback is the trial ending rather than a paid plan lapsing.
+    const fallback: FallbackReason = subscription.trialEndsAt !== null ? "trial_ended" : "subscription_ended";
+    return { subscription: { ...subscription, plan: FALLBACK_PLAN, status: "active" }, fallback };
+  }
+  return { subscription: status === subscription.status ? subscription : { ...subscription, status }, fallback: null };
 }

@@ -6,7 +6,7 @@ import { requireCurrentSession } from "@/features/auth/lib/current-session";
 import { ForbiddenError, requirePermission } from "@/features/auth/domain/permissions";
 import { getSubscriptionLifecycleService } from "../service";
 import type { Subscription } from "../domain/subscription";
-import { isSubscriptionPlan } from "../domain/plan";
+import { isPaidPlan, isSubscriptionPlan, planDefinition, SELF_SERVE_PAID_UPGRADES, UPGRADE_CONTACT_COPY } from "../domain/plan";
 import { InvalidSubscriptionTransitionError } from "../domain/lifecycle";
 import { NoSubscriptionError, PlanNotAssignableError } from "../service/subscription-lifecycle-service";
 
@@ -68,6 +68,15 @@ export async function changePlanAction(plan: string): Promise<SubscriptionAction
     return { ok: false, error: { message: "That plan doesn't exist." } };
   }
 
+  // Mission 036 — no billing provider exists yet, so switching onto a paid plan from the UI would hand it out for free. Downgrading to Starter stays self-serve; the Atlas team switches paid plans (scripts/set-plan.ts).
+  if (!SELF_SERVE_PAID_UPGRADES && isPaidPlan(plan)) {
+    const current = await getSubscriptionLifecycleService().getCurrent(session.business.id);
+    const alreadyOnIt = current !== null && current.plan === plan && (current.status === "active" || current.status === "trialing");
+    if (!alreadyOnIt) {
+      return { ok: false, error: { message: `${planDefinition(plan).name} is arranged with our team. ${UPGRADE_CONTACT_COPY}` } };
+    }
+  }
+
   try {
     const subscription = await getSubscriptionLifecycleService().changePlan(session.business.id, plan);
     revalidatePath("/app/settings");
@@ -104,6 +113,14 @@ export async function resumeSubscriptionAction(): Promise<SubscriptionActionResu
   } catch (error) {
     if (error instanceof PermissionDenied) return { ok: false, error: { message: error.message } };
     throw error;
+  }
+
+  // Mission 036 — an ended paid plan or trial comes back through the Atlas team (payment first), not a free self-serve resume. Undoing a pending cancel-at-period-end stays self-serve.
+  if (!SELF_SERVE_PAID_UPGRADES) {
+    const current = await getSubscriptionLifecycleService().getCurrent(session.business.id);
+    if (current && (current.status === "expired" || current.status === "cancelled") && isPaidPlan(current.plan)) {
+      return { ok: false, error: { message: UPGRADE_CONTACT_COPY } };
+    }
   }
 
   try {

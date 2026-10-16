@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { TRIAL_DAYS } from "../../../entitlements/domain/plan";
 import type { DatabaseBusinessRepository as RepoClass } from "../database-business-repository";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -47,16 +48,23 @@ describe("DatabaseBusinessRepository.create (Mission 028)", () => {
     expect(business.websiteMode).toBe("none");
   });
 
-  it("also creates a subscription row for the new business, on the starter plan, active", async () => {
+  // Mission 036 — a new business starts a full-feature trial (Pro, TRIAL_DAYS) instead of the old starter/active row; it falls back to free Starter when the trial ends.
+  it("also creates a subscription row for the new business: a TRIAL_DAYS trial on the Pro plan", async () => {
+    const before = Date.now();
     const repo = new DatabaseBusinessRepository();
     const business = await repo.create({ name: "New Dealer 2" });
+    const after = Date.now();
 
-    const row = rawDb.prepare("SELECT plan, status FROM subscriptions WHERE business_id = ?").get(business.id) as
-      | { plan: string; status: string }
-      | undefined;
+    const row = rawDb
+      .prepare("SELECT plan, status, trial_ends_at AS trialEndsAt FROM subscriptions WHERE business_id = ?")
+      .get(business.id) as { plan: string; status: string; trialEndsAt: string | null } | undefined;
     expect(row).toBeDefined();
-    expect(row?.plan).toBe("starter");
-    expect(row?.status).toBe("active");
+    expect(row?.plan).toBe("pro");
+    expect(row?.status).toBe("trialing");
+    const trialMs = TRIAL_DAYS * 24 * 60 * 60 * 1000;
+    const endsAt = new Date(row?.trialEndsAt ?? "").getTime();
+    expect(endsAt).toBeGreaterThanOrEqual(before + trialMs);
+    expect(endsAt).toBeLessThanOrEqual(after + trialMs);
   });
 });
 

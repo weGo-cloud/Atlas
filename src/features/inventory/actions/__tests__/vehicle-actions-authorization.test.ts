@@ -151,9 +151,9 @@ describe("vehicle actions — operational operations (staff-permitted, per basel
 
 describe("vehicle actions — plan usage limit enforcement (Mission 028, Section 7/9)", () => {
   it("rejects creating a vehicle once the business's plan limit is reached", async () => {
-    const business = harness.seedBusiness("Starter Dealer", "starter"); // 50-vehicle limit
+    const business = harness.seedBusiness("Starter Dealer", "starter"); // 30-item limit (Mission 036)
     const owner = await harness.seedUser(business.id, "owner");
-    for (let i = 0; i < 50; i += 1) {
+    for (let i = 0; i < 30; i += 1) {
       harness.seedVehicle(business.id, { stockId: `LIMIT-${i}` });
     }
     await harness.signIn(owner);
@@ -179,7 +179,7 @@ describe("vehicle actions — plan usage limit enforcement (Mission 028, Section
   it("allows creating a vehicle below the plan's limit", async () => {
     const business = harness.seedBusiness("Starter Dealer 2", "starter");
     const owner = await harness.seedUser(business.id, "owner");
-    for (let i = 0; i < 49; i += 1) {
+    for (let i = 0; i < 29; i += 1) {
       harness.seedVehicle(business.id, { stockId: `OK-${i}` });
     }
     await harness.signIn(owner);

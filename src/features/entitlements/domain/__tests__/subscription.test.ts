@@ -5,6 +5,7 @@ import {
   isSubscriptionStatus,
   isTrialActive,
   resolveEffectiveStatus,
+  resolveEffectiveSubscription,
   statusGrantsAccess,
   type Subscription,
 } from "../subscription";
@@ -129,5 +130,70 @@ describe("isTrialActive", () => {
   it("is false for a non-trialing subscription", () => {
     const subscription = fixture({ status: "active" });
     expect(isTrialActive(subscription, new Date())).toBe(false);
+  });
+});
+
+describe("resolveEffectiveSubscription (Mission 036)", () => {
+  const base = {
+    id: "sub_1",
+    businessId: "biz_1",
+    plan: "pro" as const,
+    status: "trialing" as const,
+    trialEndsAt: "2026-01-15T00:00:00.000Z",
+    currentPeriodStart: null,
+    currentPeriodEnd: null,
+    cancelAtPeriodEnd: false,
+    provider: null,
+    providerCustomerId: null,
+    providerSubscriptionId: null,
+    providerStatus: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("leaves a running trial exactly as stored, with no fallback", () => {
+    const result = resolveEffectiveSubscription(base, new Date("2026-01-10T00:00:00.000Z"));
+    expect(result.fallback).toBeNull();
+    expect(result.subscription).toEqual(base);
+  });
+
+  it("falls back to active Starter at the instant the trial elapses (deterministic, no cron)", () => {
+    const result = resolveEffectiveSubscription(base, new Date("2026-01-15T00:00:00.000Z"));
+    expect(result.fallback).toBe("trial_ended");
+    expect(result.subscription.plan).toBe("starter");
+    expect(result.subscription.status).toBe("active");
+  });
+
+  it("falls back after cancel-at-period-end elapses, labelled as a ended subscription", () => {
+    const paid = {
+      ...base,
+      status: "active" as const,
+      trialEndsAt: null,
+      cancelAtPeriodEnd: true,
+      currentPeriodEnd: "2026-02-01T00:00:00.000Z",
+    };
+    expect(resolveEffectiveSubscription(paid, new Date("2026-01-20T00:00:00.000Z")).fallback).toBeNull();
+    const after = resolveEffectiveSubscription(paid, new Date("2026-02-02T00:00:00.000Z"));
+    expect(after.fallback).toBe("subscription_ended");
+    expect(after.subscription.plan).toBe("starter");
+  });
+
+  it("falls back for stored cancelled and expired statuses", () => {
+    for (const status of ["cancelled", "expired"] as const) {
+      const result = resolveEffectiveSubscription({ ...base, status, trialEndsAt: null }, new Date("2026-03-01T00:00:00.000Z"));
+      expect(result.fallback).toBe("subscription_ended");
+      expect(result.subscription.plan).toBe("starter");
+      expect(result.subscription.status).toBe("active");
+    }
+  });
+
+  it("does not change paused (still locked) or past_due (still grants access)", () => {
+    const paused = resolveEffectiveSubscription({ ...base, status: "paused", trialEndsAt: null }, new Date("2026-03-01T00:00:00.000Z"));
+    expect(paused.fallback).toBeNull();
+    expect(paused.subscription.status).toBe("paused");
+    expect(paused.subscription.plan).toBe("pro");
+    const pastDue = resolveEffectiveSubscription({ ...base, status: "past_due", trialEndsAt: null }, new Date("2026-03-01T00:00:00.000Z"));
+    expect(pastDue.fallback).toBeNull();
+    expect(pastDue.subscription.status).toBe("past_due");
   });
 });

@@ -2,11 +2,19 @@ import { Settings } from "lucide-react";
 
 import { requireCurrentSession } from "@/features/auth/lib/current-session";
 import { getEntitlementService, getSubscriptionLifecycleService } from "@/features/entitlements/service";
-import { capabilitiesFor, listPlans, planDefinition } from "@/features/entitlements/domain/plan";
+import {
+  capabilitiesFor,
+  listPlans,
+  planDefinition,
+  SELF_SERVE_PAID_UPGRADES,
+  UPGRADE_CONTACT_COPY,
+} from "@/features/entitlements/domain/plan";
 import { accessLevelMessage } from "@/features/entitlements/domain/access-policy";
+import { planNotice } from "@/features/entitlements/domain/plan-notice";
 import { PlanSettings } from "@/features/entitlements/components/plan-settings";
 import { ConversionSettings } from "@/features/auth/components/conversion-settings";
 import { getVehicleService } from "@/features/inventory/service";
+import { getFurnitureProductService } from "@/features/furniture/service";
 
 export const metadata = { title: "Settings · Atlas" };
 
@@ -35,14 +43,21 @@ export default async function SettingsPage() {
     subscription = await getSubscriptionLifecycleService().reconcileElapsed(business.id, new Date());
   }
 
-  const plan = subscription?.plan ?? "starter";
+  // Mission 036 — everything shown below is the *effective* subscription (a finished trial or ended plan resolves to the free Starter fallback), never the stored row.
+  const now = new Date();
+  const effective = await entitlementService.getEffectiveSubscription(business.id, now);
+  const plan = effective?.subscription.plan ?? "starter";
   const entitledCapabilities = capabilitiesFor(plan);
   const planName = planDefinition(plan).name;
-  const accessLevel = await entitlementService.getAccessLevel(business.id);
+  const accessLevel = await entitlementService.getAccessLevel(business.id, now);
   const statusMessage = accessLevel === "no_subscription" ? null : accessLevelMessage(accessLevel);
+  const notice = effective ? planNotice(effective, now) : null;
 
-  const vehicleCounts = await getVehicleService(business.id).countByStatus();
-  const vehicleUsage = vehicleCounts.available + vehicleCounts.reserved + vehicleCounts.sold;
+  const isFurniture = business.vertical === "furniture";
+  const itemCounts = isFurniture
+    ? await getFurnitureProductService(business.id).countByStatus()
+    : await getVehicleService(business.id).countByStatus();
+  const itemUsage = itemCounts.available + itemCounts.reserved + itemCounts.sold;
 
   return (
     <div className="flex flex-col gap-6">
@@ -52,17 +67,24 @@ export default async function SettingsPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Settings</h1>
           <p className="text-sm text-muted-foreground">
             {business.name} · {planName} plan
-            {subscription && subscription.status !== "active" ? ` (${subscription.status})` : ""}
+            {effective && effective.subscription.status !== "active" ? ` (${effective.subscription.status})` : ""}
             {entitledCapabilities.length > 0 ? ` · ${entitledCapabilities.join(", ")}` : ""}
           </p>
         </div>
       </div>
 
       <PlanSettings
-        subscription={subscription}
+        subscription={effective?.subscription ?? null}
+        storedStatus={subscription?.status ?? null}
         plans={listPlans()}
-        vehicleUsage={vehicleUsage}
+        itemUsage={itemUsage}
+        itemLabel={isFurniture ? "Furniture products" : "Vehicles"}
+        limitKey={isFurniture ? "furniture_products" : "vehicles"}
         statusMessage={statusMessage}
+        noticeMessage={notice?.message ?? null}
+        noticeKind={notice?.kind ?? null}
+        selfServePaidUpgrades={SELF_SERVE_PAID_UPGRADES}
+        upgradeContactCopy={UPGRADE_CONTACT_COPY}
       />
 
       <ConversionSettings

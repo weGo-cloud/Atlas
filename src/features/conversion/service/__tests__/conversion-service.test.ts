@@ -129,11 +129,18 @@ describe("ConversionService.resolveChannel", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("fails with FORBIDDEN for external_integration on a plan that lacks it (growth)", async () => {
-    const businessId = seedBusiness({ plan: "growth" });
+  // Mission 036 — Growth now includes external_integration, so the plan that lacks it is Starter.
+  it("fails with FORBIDDEN for external_integration on a plan that lacks it (starter)", async () => {
+    const businessId = seedBusiness({ plan: "starter" });
     const result = await getService().resolveChannel(businessId, "external_integration");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("FORBIDDEN");
+  });
+
+  it("succeeds for external_integration on growth (Mission 036)", async () => {
+    const businessId = seedBusiness({ plan: "growth", websiteMode: "none" });
+    const result = await getService().resolveChannel(businessId, "external_integration");
+    expect(result.ok).toBe(true);
   });
 
   it("succeeds for external_integration on pro without needing atlas_hosted website mode", async () => {

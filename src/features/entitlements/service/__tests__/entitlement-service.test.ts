@@ -92,8 +92,15 @@ describe("EntitlementService.canAccess", () => {
     expect(decision).toEqual({ allowed: false, reason: "PLAN_DOES_NOT_INCLUDE_CAPABILITY" });
   });
 
-  it("returns SUBSCRIPTION_INACTIVE for an otherwise-entitled but cancelled business", async () => {
+  // Mission 036 — a cancelled business is no longer locked out: it falls back to free Starter, so the capability is denied because Starter does not include it (not because the subscription is inactive).
+  it("denies a paid capability for a cancelled business, which now falls back to Starter", async () => {
     const businessId = seedBusinessWithSubscription("pro", "cancelled");
+    const decision = await getService().canAccess(businessId, "external_integration");
+    expect(decision).toEqual({ allowed: false, reason: "PLAN_DOES_NOT_INCLUDE_CAPABILITY" });
+  });
+
+  it("still returns SUBSCRIPTION_INACTIVE for a paused business (paused is unchanged and stays locked)", async () => {
+    const businessId = seedBusinessWithSubscription("pro", "paused");
     const decision = await getService().canAccess(businessId, "external_integration");
     expect(decision).toEqual({ allowed: false, reason: "SUBSCRIPTION_INACTIVE" });
   });
@@ -102,7 +109,7 @@ describe("EntitlementService.canAccess", () => {
 describe("EntitlementService.checkLimit", () => {
   it("allows usage within the plan's limit", async () => {
     const businessId = seedBusinessWithSubscription("starter", "active");
-    const decision = await getService().checkLimit(businessId, "vehicles", 49);
+    const decision = await getService().checkLimit(businessId, "vehicles", 29); // Mission 036: Starter limit is 30.
     expect(decision.allowed).toBe(true);
   });
 
@@ -131,14 +138,15 @@ describe("EntitlementService.checkLimit", () => {
 
 /** Mission 029, Section 11 — effective status is evaluated from an explicit `now`, without persisting anything, so a trial that has already elapsed correctly denies access before reconcileElapsed ever runs. */
 describe("EntitlementService — effective status via explicit now (Mission 029, Section 11)", () => {
-  it("denies a capability once a trial's stored trialEndsAt has passed, using the supplied now", async () => {
+  // Mission 036 — an elapsed trial resolves to the free Starter fallback: storefront is denied because Starter lacks it, not because the subscription is locked.
+  it("denies a capability once a trial's stored trialEndsAt has passed (falls back to Starter), using the supplied now", async () => {
     const businessId = seedBusinessWithSubscription("growth", "trialing");
     rawDb
       .prepare("UPDATE subscriptions SET trial_ends_at = ? WHERE business_id = ?")
       .run("2026-01-01T00:00:00.000Z", businessId);
 
     const decision = await getService().canAccess(businessId, "storefront", new Date("2026-02-01T00:00:00.000Z"));
-    expect(decision).toEqual({ allowed: false, reason: "SUBSCRIPTION_INACTIVE" });
+    expect(decision).toEqual({ allowed: false, reason: "PLAN_DOES_NOT_INCLUDE_CAPABILITY" });
   });
 
   it("still grants the capability for a `now` before trialEndsAt", async () => {
@@ -170,7 +178,7 @@ describe("resolveLimitGate (Mission 029, Section 14)", () => {
   it("returns the plan's numeric limit for an active subscription", async () => {
     const businessId = seedBusinessWithSubscription("starter", "active");
     const gate = await getService().resolveLimitGate(businessId, "vehicles");
-    expect(gate).toEqual({ ok: true, limit: 50 });
+    expect(gate).toEqual({ ok: true, limit: 30 }); // Mission 036: Starter is 30 items.
   });
 
   it("returns null (unlimited) for pro", async () => {
@@ -179,8 +187,15 @@ describe("resolveLimitGate (Mission 029, Section 14)", () => {
     expect(gate).toEqual({ ok: true, limit: null });
   });
 
-  it("rejects with SUBSCRIPTION_INACTIVE for a cancelled subscription", async () => {
+  // Mission 036 — a cancelled business keeps adding items up to the Starter limit instead of being blocked.
+  it("falls back to the Starter limit for a cancelled subscription", async () => {
     const businessId = seedBusinessWithSubscription("growth", "cancelled");
+    const gate = await getService().resolveLimitGate(businessId, "vehicles");
+    expect(gate).toEqual({ ok: true, limit: 30 });
+  });
+
+  it("rejects with SUBSCRIPTION_INACTIVE for a paused subscription (unchanged)", async () => {
+    const businessId = seedBusinessWithSubscription("growth", "paused");
     const gate = await getService().resolveLimitGate(businessId, "vehicles");
     expect(gate).toEqual({ ok: false, reason: "SUBSCRIPTION_INACTIVE" });
   });
@@ -216,9 +231,48 @@ describe("getAccessLevel (Mission 029, Section 13)", () => {
     expect(await getService().getAccessLevel(businessId)).toBe("grace");
   });
 
-  it("is 'locked' for cancelled", async () => {
+  // Mission 036 — cancelled/expired resolve to the Starter fallback, which is "full" access to that free tier. Only paused stays locked.
+  it("is 'full' for cancelled (falls back to free Starter)", async () => {
     const businessId = seedBusinessWithSubscription("starter", "cancelled");
+    expect(await getService().getAccessLevel(businessId)).toBe("full");
+  });
+
+  it("is 'locked' for paused", async () => {
+    const businessId = seedBusinessWithSubscription("starter", "paused");
     expect(await getService().getAccessLevel(businessId)).toBe("locked");
+  });
+});
+
+describe("getEffectiveSubscription (Mission 036)", () => {
+  it("returns the stored subscription with no fallback for a running trial", async () => {
+    const businessId = seedBusinessWithSubscription("pro", "trialing");
+    rawDb.prepare("UPDATE subscriptions SET trial_ends_at = ? WHERE business_id = ?").run("2026-06-01T00:00:00.000Z", businessId);
+    const effective = await getService().getEffectiveSubscription(businessId, new Date("2026-01-01T00:00:00.000Z"));
+    expect(effective?.fallback).toBeNull();
+    expect(effective?.subscription.plan).toBe("pro");
+    expect(effective?.subscription.status).toBe("trialing");
+  });
+
+  it("falls back to active Starter with reason trial_ended once the trial has elapsed, without writing", async () => {
+    const businessId = seedBusinessWithSubscription("pro", "trialing");
+    rawDb.prepare("UPDATE subscriptions SET trial_ends_at = ? WHERE business_id = ?").run("2026-01-01T00:00:00.000Z", businessId);
+    const effective = await getService().getEffectiveSubscription(businessId, new Date("2026-02-01T00:00:00.000Z"));
+    expect(effective?.fallback).toBe("trial_ended");
+    expect(effective?.subscription.plan).toBe("starter");
+    expect(effective?.subscription.status).toBe("active");
+    const stored = rawDb.prepare("SELECT plan, status FROM subscriptions WHERE business_id = ?").get(businessId) as { plan: string; status: string };
+    expect(stored).toEqual({ plan: "pro", status: "trialing" });
+  });
+
+  it("falls back with reason subscription_ended for a cancelled paid plan", async () => {
+    const businessId = seedBusinessWithSubscription("growth", "cancelled");
+    const effective = await getService().getEffectiveSubscription(businessId);
+    expect(effective?.fallback).toBe("subscription_ended");
+    expect(effective?.subscription.plan).toBe("starter");
+  });
+
+  it("returns null when the business has no subscription", async () => {
+    expect(await getService().getEffectiveSubscription("biz_nobody")).toBeNull();
   });
 });
 

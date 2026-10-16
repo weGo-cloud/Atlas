@@ -913,6 +913,34 @@ export const marketingPublications = sqliteTable(
 export type MarketingPublicationRow = typeof marketingPublications.$inferSelect;
 export type NewMarketingPublicationRow = typeof marketingPublications.$inferInsert;
 
+export const socialPosts = sqliteTable(
+  "social_posts",
+  {
+    id: text("id").primaryKey(),
+    businessId: text("business_id")
+      .notNull()
+      .references(() => businesses.id),
+    itemType: text("item_type").notNull(),
+    itemId: text("item_id").notNull(),
+    templateId: text("template_id").notNull(),
+    photoUrl: text("photo_url").notNull(),
+    caption: text("caption").notNull(),
+    imageUrl: text("image_url").notNull(),
+    status: text("status").notNull().default("draft"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+    approvedAt: text("approved_at"),
+  },
+  (table) => [
+    index("social_posts_business_created_idx").on(table.businessId, table.createdAt),
+    index("social_posts_business_item_idx").on(table.businessId, table.itemType, table.itemId),
+  ]
+);
+
+export type SocialPostRow = typeof socialPosts.$inferSelect;
+export type NewSocialPostRow = typeof socialPosts.$inferInsert;
+
 /**
  * Mission 033 — Atlas Assistant. One row per customer conversation on
  * one channel. `customerKey` is the WhatsApp phone number, or an
