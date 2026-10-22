@@ -89,6 +89,8 @@ export function defaultSettings(businessId: string): AssistantSettings {
     tone: "friendly",
     handoffTopics: null,
     whatsappPhoneNumberId: null,
+    metaPageId: null,
+    instagramAccountId: null,
   };
 }
 
@@ -105,6 +107,8 @@ function toSettings(row: AssistantSettingsRow): AssistantSettings {
     tone: row.tone === "formal" ? "formal" : "friendly",
     handoffTopics: row.handoffTopics,
     whatsappPhoneNumberId: row.whatsappPhoneNumberId,
+    metaPageId: row.metaPageId,
+    instagramAccountId: row.instagramAccountId,
   };
 }
 
@@ -124,6 +128,22 @@ export class DatabaseAssistantRepository implements AssistantRepository {
       .where(eq(assistantSettings.whatsappPhoneNumberId, phoneNumberId))
       .limit(1);
     return rows[0]?.businessId ?? null;
+  }
+
+  /**
+   * Mission 039 — the second deliberate cross-business lookup (like the WhatsApp one above): decides which
+   * business an inbound Messenger/Instagram webhook event belongs to. Page and Instagram ids are unique
+   * across businesses (unique indexes), and ownership is verified against Meta when a business connects
+   * (see channels/meta/verify.ts), so one business cannot claim another's Page.
+   */
+  static async findMetaRoute(platform: "messenger" | "instagram", accountId: string): Promise<{ businessId: string; pageId: string } | null> {
+    const rows = await db
+      .select({ businessId: assistantSettings.businessId, pageId: assistantSettings.metaPageId })
+      .from(assistantSettings)
+      .where(platform === "messenger" ? eq(assistantSettings.metaPageId, accountId) : eq(assistantSettings.instagramAccountId, accountId))
+      .limit(1);
+    const row = rows[0];
+    return row?.pageId ? { businessId: row.businessId, pageId: row.pageId } : null;
   }
 
   async getConversation(id: string): Promise<AssistantConversation | null> {
@@ -303,6 +323,8 @@ export class DatabaseAssistantRepository implements AssistantRepository {
       tone: next.tone,
       handoffTopics: next.handoffTopics,
       whatsappPhoneNumberId: next.whatsappPhoneNumberId,
+      metaPageId: next.metaPageId,
+      instagramAccountId: next.instagramAccountId,
       updatedAt: now,
     };
     await db.insert(assistantSettings).values(values).onConflictDoUpdate({ target: assistantSettings.businessId, set: values });

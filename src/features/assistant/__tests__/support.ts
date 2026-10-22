@@ -44,6 +44,8 @@ export type SeedProduct = {
 export function seedBusiness(raw: Database.Database, businessId: string, name = "Test Furniture") {
   const now = new Date().toISOString();
   raw.prepare("INSERT INTO businesses (id, name, vertical, website_mode, created_at, updated_at) VALUES (?, ?, 'furniture', 'atlas_hosted', ?, ?)").run(businessId, name, now, now);
+  // Mission 038 — the customer assistant is plan-gated; these fixtures represent a paying (Pro) business unless a test says otherwise.
+  raw.prepare("INSERT INTO subscriptions (id, business_id, plan, status, created_at, updated_at) VALUES (?, ?, 'pro', 'active', ?, ?)").run(`sub_${businessId}`, businessId, now, now);
 }
 
 export function seedProducts(raw: Database.Database, businessId: string, products: SeedProduct[]) {

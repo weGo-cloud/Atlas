@@ -13,6 +13,9 @@ import { getDealService } from "@/features/deals/service";
 import { formatPriceKsh } from "@/features/inventory/lib/format";
 import { getVehicleService } from "@/features/inventory/service";
 import { getLeadService } from "@/features/leads/service";
+import { DealPaymentsCard } from "@/features/payments/components/deal-payments-card";
+import { getPaymentService } from "@/features/payments/service";
+import { getEntitlementService } from "@/features/entitlements/service";
 import { DealSaleSummary } from "@/features/sales/components/deal-sale-summary";
 import { getSaleService } from "@/features/sales/service";
 import { getBusinessUsersByIds } from "@/features/auth/service";
@@ -67,6 +70,20 @@ export default async function DealDetailPage({ params }: DealDetailPageProps) {
   const actorIds = Array.from(new Set(activitiesPage.items.map((a) => a.userId)));
   const actors = await getBusinessUsersByIds(business.id, actorIds);
   const usersById = new Map(actors.map((u) => [u.id, u]));
+
+  // Mission 040 — payments panel data: balance + every payment, and whether an M-Pesa prompt can be sent right now.
+  const paymentService = getPaymentService(business.id);
+  const [paymentView, mpesaAccount, mpesaEntitlement] = await Promise.all([
+    paymentService.getDealPayments(deal.id),
+    paymentService.getAccount(),
+    getEntitlementService().canAccess(business.id, "mpesa_collection"),
+  ]);
+  const paymentCustomerPhone = customerResult.ok ? (customerResult.data.phone ?? null) : null;
+  const stk = !mpesaEntitlement.allowed
+    ? { ready: false, reason: "M-Pesa prompts need the Growth or Pro plan. You can still record M-Pesa payments below." }
+    : !mpesaAccount
+      ? { ready: false, reason: "Connect your M-Pesa account in Settings to send payment prompts. You can still record payments below." }
+      : { ready: true, reason: null };
 
   return (
     <div className="flex flex-col gap-6">
@@ -183,6 +200,10 @@ export default async function DealDetailPage({ params }: DealDetailPageProps) {
           <DealDetailEditForm deal={deal} />
         </CardContent>
       </Card>
+
+      {paymentView.ok ? (
+        <DealPaymentsCard view={paymentView.data} customerPhone={paymentCustomerPhone} canReverse={user.role === "owner"} stk={stk} />
+      ) : null}
 
       <DealSaleSummary
         dealId={deal.id}

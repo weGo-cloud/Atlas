@@ -1,5 +1,5 @@
 import type { Capability, LimitKey } from "./plan";
-import { hasCapability, limitFor } from "./plan";
+import { effectiveLimitFor, hasCapability } from "./plan";
 import type { Subscription } from "./subscription";
 import { statusGrantsAccess } from "./subscription";
 
@@ -72,7 +72,7 @@ export function evaluateLimit(subscription: Subscription, key: LimitKey, current
   if (!statusGrantsAccess(subscription.status)) {
     return { allowed: false, reason: "SUBSCRIPTION_INACTIVE", limit: null, currentUsage };
   }
-  const limit = limitFor(subscription.plan, key);
+  const limit = effectiveLimitFor(subscription.plan, subscription.status, key);
   if (limit === null) {
     return { allowed: true, reason: "UNLIMITED", limit: null, currentUsage };
   }

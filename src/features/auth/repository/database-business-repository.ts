@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/lib/db/client";
 import { businesses, type BusinessRow } from "@/lib/db/schema";
+import { hashPublicApiKey, publicApiKeyHint } from "@/lib/security/api-key";
 import { DatabaseSubscriptionRepository } from "../../entitlements/repository/database-subscription-repository";
 import { TRIAL_DAYS, TRIAL_PLAN } from "../../entitlements/domain/plan";
 import type { SubscriptionRepository } from "../../entitlements/repository/subscription-repository";
@@ -31,12 +32,22 @@ export class DatabaseBusinessRepository implements BusinessRepository {
 
   async getByPublicApiKey(apiKey: string): Promise<Business | null> {
     if (!apiKey) return null;
-    const rows = await db
+    const hashed = await db
       .select()
       .from(businesses)
-      .where(eq(businesses.publicApiKey, apiKey))
+      .where(eq(businesses.publicApiKeyHash, hashPublicApiKey(apiKey)))
       .limit(1);
-    return rows[0] ? toBusiness(rows[0]) : null;
+    if (hashed[0]) return toBusiness(hashed[0]);
+
+    // Legacy rows (pre-0021) still hold the plaintext key. Accept it once and upgrade in place so
+    // existing integrations keep working while the plaintext disappears from the database.
+    const legacy = await db.select().from(businesses).where(eq(businesses.publicApiKey, apiKey)).limit(1);
+    if (!legacy[0]) return null;
+    await db
+      .update(businesses)
+      .set({ publicApiKeyHash: hashPublicApiKey(apiKey), publicApiKeyHint: publicApiKeyHint(apiKey), publicApiKey: null })
+      .where(eq(businesses.id, legacy[0].id));
+    return this.getById(legacy[0].id);
   }
 
   async create(input: { name: string }): Promise<Business> {
@@ -68,9 +79,32 @@ export class DatabaseBusinessRepository implements BusinessRepository {
   async updateSettings(id: string, input: UpdateBusinessSettingsInput): Promise<Business | null> {
     const patch: Partial<typeof businesses.$inferInsert> = { updatedAt: new Date().toISOString() };
     if (input.websiteMode !== undefined) patch.websiteMode = input.websiteMode;
-    if (input.publicApiKey !== undefined) patch.publicApiKey = input.publicApiKey;
+    if (input.publicApiAllowedOrigins !== undefined) {
+      patch.publicApiAllowedOrigins = input.publicApiAllowedOrigins.length > 0 ? JSON.stringify(input.publicApiAllowedOrigins) : null;
+    }
 
     await db.update(businesses).set(patch).where(eq(businesses.id, id));
+    return this.getById(id);
+  }
+
+  async setPublicApiKey(id: string, apiKey: string): Promise<Business | null> {
+    await db
+      .update(businesses)
+      .set({
+        publicApiKeyHash: hashPublicApiKey(apiKey),
+        publicApiKeyHint: publicApiKeyHint(apiKey),
+        publicApiKey: null,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(businesses.id, id));
+    return this.getById(id);
+  }
+
+  async clearPublicApiKey(id: string): Promise<Business | null> {
+    await db
+      .update(businesses)
+      .set({ publicApiKeyHash: null, publicApiKeyHint: null, publicApiKey: null, updatedAt: new Date().toISOString() })
+      .where(eq(businesses.id, id));
     return this.getById(id);
   }
 }
@@ -81,7 +115,8 @@ function toBusiness(row: BusinessRow): Business {
     name: row.name,
     vertical: row.vertical,
     websiteMode: row.websiteMode as Business["websiteMode"],
-    publicApiKey: row.publicApiKey,
+    publicApiKeyHint: row.publicApiKeyHint ?? (row.publicApiKey ? publicApiKeyHint(row.publicApiKey) : null),
+    publicApiAllowedOrigins: parseOrigins(row.publicApiAllowedOrigins),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -91,4 +126,14 @@ let counter = 0;
 function generateId(): string {
   counter += 1;
   return `biz_${Date.now().toString(36)}${counter.toString(36)}`;
+}
+
+function parseOrigins(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
 }

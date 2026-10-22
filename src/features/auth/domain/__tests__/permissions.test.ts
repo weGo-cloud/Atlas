@@ -16,7 +16,8 @@ function makeSession(role: User["role"]): CurrentSession {
     name: "Test Dealership",
     vertical: "auto",
     websiteMode: "none",
-    publicApiKey: null,
+    publicApiKeyHint: null,
+    publicApiAllowedOrigins: [],
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };

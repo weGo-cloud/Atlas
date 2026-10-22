@@ -7,7 +7,8 @@
  * reimplementing request signing, error-shape parsing, and the
  * never-log-the-token discipline separately.
  */
-const GRAPH_API_VERSION = "v19.0";
+// Mission 039 — overridable (META_GRAPH_API_VERSION=vXX.0) because Meta retires old versions; check the Graph API changelog before launch.
+const GRAPH_API_VERSION = process.env.META_GRAPH_API_VERSION || "v19.0";
 const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
 export class MetaGraphApiError extends Error {
@@ -108,5 +109,29 @@ async function parseGraphApiResponse(response: Response): Promise<{ id?: string 
     throw new MetaGraphApiError(body.error?.message ?? "Meta rejected the request.", response.status);
   }
 
+  return body;
+}
+
+/**
+ * Mission 039 — read-only Graph call (used to verify that a Page access token really belongs to the Page a
+ * business claims). Bearer auth, 10s timeout, and the same never-log-the-token discipline as the writers above.
+ */
+export async function graphApiGet<T = Record<string, unknown>>(
+  path: string,
+  accessToken: string,
+  params: Record<string, string> = {}
+): Promise<T> {
+  const query = new URLSearchParams(params).toString();
+  let response: Response;
+  try {
+    response = await fetch(`${GRAPH_API_BASE}/${path}${query ? `?${query}` : ""}`, {
+      headers: { authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    throw new MetaGraphApiError("Could not reach Meta. Please try again.", 0);
+  }
+  const body = (await response.json().catch(() => ({}))) as T & { error?: { message?: string } };
+  if (!response.ok) throw new MetaGraphApiError(body.error?.message ?? "Meta rejected the request.", response.status);
   return body;
 }

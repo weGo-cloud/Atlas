@@ -1,4 +1,10 @@
+import { randomBytes } from "node:crypto";
+
 import { vi } from "vitest";
+
+// Mission 037 — secrets are encrypted with ATLAS_ENCRYPTION_KEY and there is deliberately no fallback key, so tests that store a
+// credential need one. Tests of the no-key behaviour delete/restore it themselves.
+process.env.ATLAS_ENCRYPTION_KEY ||= randomBytes(32).toString("base64");
 
 /**
  * Global test setup (Mission 014).
@@ -38,6 +44,12 @@ import { vi } from "vitest";
  */
 
 const cookieStore = new Map<string, string>();
+let testHeaders = new Headers();
+
+/** Mission 037 — lets a test choose the request headers `headers()` returns (e.g. x-forwarded-for for login throttling). */
+export function __setTestHeaders(init: Record<string, string>): void {
+  testHeaders = new Headers(init);
+}
 
 export function __setTestCookie(name: string, value: string): void {
   cookieStore.set(name, value);
@@ -45,9 +57,11 @@ export function __setTestCookie(name: string, value: string): void {
 
 export function __clearTestCookies(): void {
   cookieStore.clear();
+  testHeaders = new Headers();
 }
 
 vi.mock("next/headers", () => ({
+  headers: async () => testHeaders,
   cookies: async () => ({
     get: (name: string) => {
       const value = cookieStore.get(name);

@@ -113,7 +113,7 @@ describe("getByPublicApiKey", () => {
   it("finds a business by its API key", async () => {
     const repo = new DatabaseBusinessRepository();
     const business = await repo.create({ name: "Keyed Dealer" });
-    await repo.updateSettings(business.id, { publicApiKey: "test-key-123" });
+    await repo.setPublicApiKey(business.id, "test-key-123");
 
     const found = await repo.getByPublicApiKey("test-key-123");
     expect(found?.id).toBe(business.id);
@@ -127,5 +127,75 @@ describe("getByPublicApiKey", () => {
   it("returns null for an empty key without querying (defensive)", async () => {
     const repo = new DatabaseBusinessRepository();
     expect(await repo.getByPublicApiKey("")).toBeNull();
+  });
+});
+
+describe("Mission 037 — public API key hashing", () => {
+  it("never stores the plaintext key; only hash + hint", async () => {
+    const repo = new DatabaseBusinessRepository();
+    const business = await repo.create({ name: "Hashed Dealer" });
+    const key = "wego_live_" + "ab12" + "9".repeat(40) + "f3e0";
+    const updated = await repo.setPublicApiKey(business.id, key);
+
+    const row = rawDb.prepare("SELECT public_api_key, public_api_key_hash, public_api_key_hint FROM businesses WHERE id = ?").get(business.id) as {
+      public_api_key: string | null;
+      public_api_key_hash: string | null;
+      public_api_key_hint: string | null;
+    };
+    expect(row.public_api_key).toBeNull();
+    expect(row.public_api_key_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(row)).not.toContain("9999999999");
+    expect(row.public_api_key_hint).toBe("wego_live_ab12…f3e0");
+    expect(updated?.publicApiKeyHint).toBe("wego_live_ab12…f3e0");
+    // The domain object cannot carry the plaintext at all.
+    expect(JSON.stringify(updated)).not.toContain("9999999999");
+    expect((await repo.getByPublicApiKey(key))?.id).toBe(business.id);
+  });
+
+  it("rotation invalidates the old key; revoke invalidates everything", async () => {
+    const repo = new DatabaseBusinessRepository();
+    const business = await repo.create({ name: "Rotating Dealer" });
+    await repo.setPublicApiKey(business.id, "key-one");
+    await repo.setPublicApiKey(business.id, "key-two");
+    expect(await repo.getByPublicApiKey("key-one")).toBeNull();
+    expect((await repo.getByPublicApiKey("key-two"))?.id).toBe(business.id);
+
+    const revoked = await repo.clearPublicApiKey(business.id);
+    expect(revoked?.publicApiKeyHint).toBeNull();
+    expect(await repo.getByPublicApiKey("key-two")).toBeNull();
+  });
+
+  it("a legacy plaintext key still authenticates once and is upgraded in place", async () => {
+    const repo = new DatabaseBusinessRepository();
+    const business = await repo.create({ name: "Legacy Dealer" });
+    const legacyKey = "wego_live_" + "c0de" + "1".repeat(40) + "beef";
+    rawDb.prepare("UPDATE businesses SET public_api_key = ? WHERE id = ?").run(legacyKey, business.id);
+
+    expect((await repo.getByPublicApiKey(legacyKey))?.id).toBe(business.id);
+    const row = rawDb.prepare("SELECT public_api_key, public_api_key_hash FROM businesses WHERE id = ?").get(business.id) as {
+      public_api_key: string | null;
+      public_api_key_hash: string | null;
+    };
+    expect(row.public_api_key).toBeNull();
+    expect(row.public_api_key_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect((await repo.getByPublicApiKey(legacyKey))?.id).toBe(business.id); // still works after the upgrade
+  });
+
+  it("two businesses cannot share a key; lookups are business-exact", async () => {
+    const repo = new DatabaseBusinessRepository();
+    const a = await repo.create({ name: "A" });
+    const b = await repo.create({ name: "B" });
+    await repo.setPublicApiKey(a.id, "shared-attempt");
+    await expect(repo.setPublicApiKey(b.id, "shared-attempt")).rejects.toThrow();
+    expect((await repo.getByPublicApiKey("shared-attempt"))?.id).toBe(a.id);
+  });
+
+  it("persists allowed origins and clears them with an empty list", async () => {
+    const repo = new DatabaseBusinessRepository();
+    const business = await repo.create({ name: "Origins Dealer" });
+    const set = await repo.updateSettings(business.id, { publicApiAllowedOrigins: ["https://shop.co.ke"] });
+    expect(set?.publicApiAllowedOrigins).toEqual(["https://shop.co.ke"]);
+    const cleared = await repo.updateSettings(business.id, { publicApiAllowedOrigins: [] });
+    expect(cleared?.publicApiAllowedOrigins).toEqual([]);
   });
 });

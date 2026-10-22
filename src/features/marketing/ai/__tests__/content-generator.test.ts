@@ -8,6 +8,9 @@ import {
 } from "../content-generator";
 import type { GroundedFacts } from "../../domain/grounded-facts";
 
+// Mission 037 — these tests cover the HTTP behaviour of the generator. The daily spend guard needs a database and has its own tests (lib/ai/__tests__/spend-guard.test.ts), so it is stubbed open here.
+vi.mock("@/lib/ai/spend-guard", () => ({ reserveGlobalAiCall: async () => true }));
+
 function facts(): GroundedFacts {
   return {
     itemLabel: "2021 Toyota Vitz",

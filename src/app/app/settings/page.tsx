@@ -12,6 +12,10 @@ import {
 import { accessLevelMessage } from "@/features/entitlements/domain/access-policy";
 import { planNotice } from "@/features/entitlements/domain/plan-notice";
 import { PlanSettings } from "@/features/entitlements/components/plan-settings";
+import { BillingCard } from "@/features/billing/components/billing-card";
+import { BillingService } from "@/features/billing/service/billing-service";
+import { MpesaAccountCard } from "@/features/payments/components/mpesa-account-card";
+import { getPaymentService } from "@/features/payments/service";
 import { ConversionSettings } from "@/features/auth/components/conversion-settings";
 import { getVehicleService } from "@/features/inventory/service";
 import { getFurnitureProductService } from "@/features/furniture/service";
@@ -35,7 +39,7 @@ export const metadata = { title: "Settings · Atlas" };
  * hidden side effect of a read).
  */
 export default async function SettingsPage() {
-  const { business } = await requireCurrentSession();
+  const { business, user } = await requireCurrentSession();
   const entitlementService = getEntitlementService();
 
   let subscription = await entitlementService.getSubscription(business.id);
@@ -52,6 +56,8 @@ export default async function SettingsPage() {
   const accessLevel = await entitlementService.getAccessLevel(business.id, now);
   const statusMessage = accessLevel === "no_subscription" ? null : accessLevelMessage(accessLevel);
   const notice = effective ? planNotice(effective, now) : null;
+
+  const billingView = await new BillingService().getView(business.id);
 
   const isFurniture = business.vertical === "furniture";
   const itemCounts = isFurniture
@@ -87,10 +93,28 @@ export default async function SettingsPage() {
         upgradeContactCopy={UPGRADE_CONTACT_COPY}
       />
 
+      {billingView.enabled ? (
+        <BillingCard
+          canManage={user.role === "owner"}
+          currentPlan={billingView.currentPlan}
+          periodEnd={billingView.periodEnd}
+          autoRenew={billingView.autoRenew}
+          savedPhone={billingView.savedPhone}
+          plans={billingView.plans}
+          openInvoice={billingView.openInvoice}
+        />
+      ) : null}
+
       <ConversionSettings
         business={business}
         canUseStorefront={entitledCapabilities.includes("storefront")}
         canUseIntegration={entitledCapabilities.includes("external_integration")}
+      />
+
+      <MpesaAccountCard
+        account={await getPaymentService(business.id).getAccount()}
+        canManage={user.role === "owner"}
+        entitled={entitledCapabilities.includes("mpesa_collection")}
       />
     </div>
   );

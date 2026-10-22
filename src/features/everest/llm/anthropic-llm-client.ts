@@ -1,3 +1,4 @@
+import { reserveGlobalAiCall } from "@/lib/ai/spend-guard";
 import { LLM_TIMEOUT_SECONDS } from "../domain/thresholds";
 import { LlmUnavailableError, type LlmClient, type LlmRequest, type LlmResponse } from "./llm-client";
 
@@ -21,6 +22,8 @@ export class AnthropicLlmClient implements LlmClient {
   ) {}
 
   async complete(request: LlmRequest): Promise<LlmResponse> {
+    // Mission 037 — global daily cap on outbound Anthropic calls (fail closed).
+    if (!(await reserveGlobalAiCall())) throw new LlmUnavailableError();
     let response: Response;
     try {
       response = await fetch(API_URL, {

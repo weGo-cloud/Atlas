@@ -5,6 +5,13 @@ import { businesses, customers, leads, users, vehicles } from "../src/lib/db/sch
 import { eq, isNull } from "drizzle-orm";
 import { hashPassword } from "../src/features/auth/lib/password";
 
+// Mission 037 — these scripts create publicly-known dev accounts; never let them run against production.
+if (process.env.NODE_ENV === "production") {
+  console.error("Refusing to run: this script creates a known dev account and must not run in production. Use create-owner.mjs.");
+  process.exit(1);
+}
+
+
 /**
  * Mission 012 migration strategy, documented here rather than as SQL
  * because the interesting part — hashing a real password — can't

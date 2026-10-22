@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   regeneratePublicApiKeyAction,
   revokePublicApiKeyAction,
+  setPublicApiOriginsAction,
   setWebsiteModeAction,
 } from "../actions/business-settings-actions";
 import type { Business, WebsiteMode } from "../domain/business";
@@ -32,8 +33,12 @@ export function ConversionSettings({
   canUseIntegration: boolean;
 }) {
   const [websiteMode, setWebsiteMode] = useState<WebsiteMode>(business.websiteMode);
-  const [apiKey, setApiKey] = useState(business.publicApiKey);
-  const [busy, setBusy] = useState<"website" | "key" | null>(null);
+  const [keyHint, setKeyHint] = useState(business.publicApiKeyHint);
+  // Mission 037 — the plaintext key exists only here, only until the owner leaves/refreshes the page.
+  const [newKey, setNewKey] = useState<string | null>(null);
+  const [originsText, setOriginsText] = useState(business.publicApiAllowedOrigins.join("\n"));
+  const [originsMessage, setOriginsMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"website" | "key" | "origins" | null>(null);
 
   const changeWebsiteMode = async (mode: WebsiteMode) => {
     setBusy("website");
@@ -45,14 +50,33 @@ export function ConversionSettings({
   const rotateKey = async () => {
     setBusy("key");
     const result = await regeneratePublicApiKeyAction();
-    if (result.ok) setApiKey(result.business.publicApiKey);
+    if (result.ok) {
+      setKeyHint(result.business.publicApiKeyHint);
+      setNewKey(result.newApiKey ?? null);
+    }
+    setBusy(null);
+  };
+
+  const saveOrigins = async () => {
+    setBusy("origins");
+    setOriginsMessage(null);
+    const result = await setPublicApiOriginsAction(originsText.split("\n"));
+    if (result.ok) {
+      setOriginsText(result.business.publicApiAllowedOrigins.join("\n"));
+      setOriginsMessage("Saved.");
+    } else {
+      setOriginsMessage(result.error.message);
+    }
     setBusy(null);
   };
 
   const revokeKey = async () => {
     setBusy("key");
     const result = await revokePublicApiKeyAction();
-    if (result.ok) setApiKey(result.business.publicApiKey);
+    if (result.ok) {
+      setKeyHint(result.business.publicApiKeyHint);
+      setNewKey(null);
+    }
     setBusy(null);
   };
 
@@ -119,21 +143,51 @@ export function ConversionSettings({
           </p>
           {canUseIntegration ? (
             <div className="flex flex-col gap-2">
-              {apiKey ? (
-                <code className="w-fit rounded bg-muted px-2 py-1 text-xs">{apiKey}</code>
+              {newKey ? (
+                <div className="flex flex-col gap-1">
+                  <code className="w-fit break-all rounded bg-muted px-2 py-1 text-xs">{newKey}</code>
+                  <p className="text-sm text-amber-600">
+                    Copy this key now. For your security it is shown only once and can&apos;t be retrieved later — if you
+                    lose it, rotate to get a new one.
+                  </p>
+                </div>
+              ) : keyHint ? (
+                <code className="w-fit rounded bg-muted px-2 py-1 text-xs">{keyHint}</code>
               ) : (
                 <p className="text-sm text-muted-foreground">No API key generated yet.</p>
               )}
               <div className="flex gap-2">
                 <Button variant="outline" onClick={rotateKey} disabled={busy === "key"}>
                   {busy === "key" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {apiKey ? "Rotate key" : "Generate key"}
+                  {keyHint ? "Rotate key" : "Generate key"}
                 </Button>
-                {apiKey ? (
+                {keyHint ? (
                   <Button variant="ghost" onClick={revokeKey} disabled={busy === "key"}>
                     Revoke
                   </Button>
                 ) : null}
+              </div>
+              <div className="flex flex-col gap-2 pt-2">
+                <p className="text-sm font-medium">Allowed website origins</p>
+                <p className="text-sm text-muted-foreground">
+                  If you call Atlas from your website&apos;s browser code, the key is visible to visitors. List your site
+                  address(es) here, one per line (e.g. https://yourshop.co.ke), and Atlas will reject browser requests
+                  from anywhere else. Leave empty to allow any origin.
+                </p>
+                <textarea
+                  value={originsText}
+                  onChange={(event) => setOriginsText(event.target.value)}
+                  rows={3}
+                  className="w-full max-w-md rounded-md border bg-background px-2 py-1 text-sm"
+                  placeholder="https://yourshop.co.ke"
+                />
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={saveOrigins} disabled={busy === "origins"}>
+                    {busy === "origins" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Save origins
+                  </Button>
+                  {originsMessage ? <span className="text-sm text-muted-foreground">{originsMessage}</span> : null}
+                </div>
               </div>
             </div>
           ) : (

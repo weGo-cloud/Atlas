@@ -1,4 +1,4 @@
-export type AuthErrorCode = "INVALID_CREDENTIALS" | "REPOSITORY_ERROR";
+export type AuthErrorCode = "INVALID_CREDENTIALS" | "REPOSITORY_ERROR" | "RATE_LIMITED";
 
 export type AuthServiceError = {
   code: AuthErrorCode;

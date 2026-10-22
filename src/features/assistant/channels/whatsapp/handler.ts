@@ -1,3 +1,4 @@
+import { checkRateLimit } from "@/lib/security/rate-limit";
 import type { AssistantService } from "../../service/assistant-service";
 import type { ProductCard } from "../../domain/types";
 import type { InboundWhatsAppMessage } from "./payload";
@@ -14,6 +15,7 @@ export type WhatsAppHandlerDeps = {
 
 const OPT_OUT = /^\s*(stop|unsubscribe|acha)\s*[.!]?\s*$/i;
 export const UNSUPPORTED_TYPE_REPLY = "Thanks for your message! I can only read text messages here — please type what you're looking for.";
+export const LIMIT_REACHED_REPLY = "Thanks for your message! Our automatic assistant is unavailable for the rest of today, but the team will reply to you personally.";
 export const OPT_OUT_REPLY = "Understood — I won't message you again unless you write to me first.";
 
 function absoluteUrl(baseUrl: string | null, path: string | null): string | null {
@@ -102,7 +104,14 @@ export async function processInboundWhatsApp(messages: InboundWhatsAppMessage[],
       externalId: message.messageId,
       customerName: message.profileName,
     });
-    if (!outcome.ok || outcome.result.duplicate || outcome.result.reply === null) continue;
+    if (!outcome.ok) {
+      // Mission 038 — at the plan's daily allowance, tell the customer once an hour that a person will follow up (replies inside the 24h window are the free kind) instead of leaving them in silence.
+      if (outcome.reason === "limit_reached" && checkRateLimit(`wa-limit-notice:${businessId}:${message.from}`, 1, 60 * 60_000).allowed) {
+        await safely("send", log, () => deps.sender.sendText(businessId, message.phoneNumberId, message.from, LIMIT_REACHED_REPLY));
+      }
+      continue;
+    }
+    if (outcome.result.duplicate || outcome.result.reply === null) continue;
 
     await safely("send", log, () => deps.sender.sendText(businessId, message.phoneNumberId, message.from, outcome.result.reply as string));
     await sendProducts(deps, businessId, message.phoneNumberId, message.from, outcome.result.products);

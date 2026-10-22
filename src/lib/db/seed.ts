@@ -4,6 +4,13 @@ import { MOCK_INVENTORY } from "../../features/inventory/data/mock-inventory";
 import { db } from "./client";
 import { vehicles } from "./schema";
 
+// Mission 037 — these scripts create publicly-known dev accounts; never let them run against production.
+if (process.env.NODE_ENV === "production") {
+  console.error("Refusing to run: this script creates a known dev account and must not run in production. Use create-owner.mjs.");
+  process.exit(1);
+}
+
+
 // Must match scripts/backfill-business-ownership.ts's DEV_BUSINESS_ID —
 // this seed only makes sense once that business row exists (run the
 // backfill script first on a fresh database).

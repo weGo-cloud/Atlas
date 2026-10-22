@@ -31,7 +31,17 @@ export function isSubscriptionPlan(value: string): value is SubscriptionPlan {
  * architecture change (Section 27: don't build a feature-flag
  * platform for flags nothing uses yet).
  */
-export const CAPABILITIES = ["storefront", "external_integration", "marketing_automation", "everest"] as const;
+/**
+ * Mission 038 — "assistant" is the customer-facing Atlas Assistant (website chat + WhatsApp). It is a
+ * capability of its own because it is the one feature whose cost scales with *customer* traffic, not the
+ * owner's own usage — so the free Starter plan must not include it (it previously wasn't gated at all,
+ * which let a Starter business run AI replies on WhatsApp for free). "everest" stays the owner-facing assistant.
+ */
+/**
+ * Mission 040 — "mpesa_collection": requesting M-Pesa STK-push payments from a customer's phone straight from a
+ * deal. Recording payments by hand (cash, bank, M-Pesa receipt code...) is part of every plan, including free Starter.
+ */
+export const CAPABILITIES = ["storefront", "external_integration", "marketing_automation", "everest", "assistant", "mpesa_collection"] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
 /**
@@ -54,7 +64,7 @@ export type Capability = (typeof CAPABILITIES)[number];
  * means the Furniture vertical's limit can be tuned independently of
  * Auto's without touching Auto's plan numbers at all.
  */
-export const LIMIT_KEYS = ["vehicles", "furniture_products", "everest_messages"] as const;
+export const LIMIT_KEYS = ["vehicles", "furniture_products", "everest_messages", "assistant_messages_daily"] as const;
 export type LimitKey = (typeof LIMIT_KEYS)[number];
 
 /**
@@ -96,6 +106,26 @@ export const SELF_SERVE_PAID_UPGRADES = false;
 export const UPGRADE_CONTACT_COPY = "Contact the Atlas team to upgrade — we'll switch your plan once payment is arranged.";
 /** Messages per calendar month a Pro (or trial) business may send to Everest. Bounds AI cost per client. */
 export const EVEREST_MONTHLY_MESSAGE_LIMIT = 500;
+
+/**
+ * Mission 038 — customer messages per UTC day the Atlas Assistant may answer for one business, by plan.
+ * Bounds AI spend per paying client: at the default Haiku-class model a full day at the Pro cap is a small
+ * fixed cost, so a bot or a viral post can't turn one client into an open-ended bill. When the cap is hit
+ * the assistant stops answering for the rest of the day and customers are handed to the team. Tune here.
+ */
+export const ASSISTANT_DAILY_LIMIT_GROWTH = 150;
+export const ASSISTANT_DAILY_LIMIT_PRO = 500;
+
+/**
+ * Mission 038 — tighter AI allowances while a business is still on its free trial. A trial runs on the Pro
+ * plan so the owner can evaluate everything, but it is also the free, unpaid exposure; these caps keep the
+ * cost of a trial that never converts small. They apply only while status is "trialing" (a paid Pro
+ * subscription gets the full plan limits) and can only ever lower a plan's own limit.
+ */
+export const TRIAL_LIMITS: Partial<Record<LimitKey, number>> = {
+  assistant_messages_daily: 60,
+  everest_messages: 100,
+};
 
 /**
  * Mission 029, Section 3 — "if actual prices do not yet exist,
@@ -163,6 +193,7 @@ const PLANS: Record<SubscriptionPlan, PlanDefinition> = {
     order: 0,
     capabilities: new Set([]),
     limits: { vehicles: STARTER_ITEM_LIMIT, furniture_products: STARTER_ITEM_LIMIT },
+    // No AI on the free plan, by design: Starter costs Atlas ~nothing to host (see ASSISTANT_DAILY_LIMIT_*).
     billingIntervals: BILLING_INTERVALS,
     // Mission 036 — Starter is the free tier every business falls back to when a trial or paid plan ends. Amount 0 is a real price (free), not an unconfigured one.
     pricing: { configured: true, amount: 0, currency: PLAN_CURRENCY, interval: "monthly" },
@@ -170,23 +201,23 @@ const PLANS: Record<SubscriptionPlan, PlanDefinition> = {
   growth: {
     id: "growth",
     name: "Growth",
-    description: "Adds the Atlas-hosted public storefront and the external-integration API (for a website or chatbot), with up to 250 items.",
+    description: "Adds the Atlas-hosted public storefront, the customer-facing Atlas Assistant (website chat and WhatsApp, up to 150 customer messages a day) and the external-integration API, with up to 250 items.",
     status: "active",
     order: 1,
-    capabilities: new Set(["storefront", "external_integration"]),
-    limits: { vehicles: 250, furniture_products: 250 },
+    capabilities: new Set(["storefront", "external_integration", "assistant", "mpesa_collection"]),
+    limits: { vehicles: 250, furniture_products: 250, assistant_messages_daily: ASSISTANT_DAILY_LIMIT_GROWTH },
     billingIntervals: BILLING_INTERVALS,
     pricing: { configured: true, amount: 5000, currency: PLAN_CURRENCY, interval: "monthly" },
   },
   pro: {
     id: "pro",
     name: "Pro",
-    description: "Everything in Growth plus the social media manager and marketing channels, the Everest assistant, and unlimited items.",
+    description: "Everything in Growth plus the social media manager and marketing channels, the Everest assistant, a higher customer-assistant allowance (up to 500 messages a day), and unlimited items.",
     status: "active",
     order: 2,
-    capabilities: new Set(["storefront", "external_integration", "marketing_automation", "everest"]),
-    // Items are unlimited on Pro; only Everest's monthly message allowance is capped (see EVEREST_MONTHLY_MESSAGE_LIMIT).
-    limits: { everest_messages: EVEREST_MONTHLY_MESSAGE_LIMIT },
+    capabilities: new Set(["storefront", "external_integration", "marketing_automation", "everest", "assistant", "mpesa_collection"]),
+    // Items are unlimited on Pro; AI use is capped: Everest monthly (EVEREST_MONTHLY_MESSAGE_LIMIT) and the customer assistant daily (ASSISTANT_DAILY_LIMIT_PRO).
+    limits: { everest_messages: EVEREST_MONTHLY_MESSAGE_LIMIT, assistant_messages_daily: ASSISTANT_DAILY_LIMIT_PRO },
     billingIntervals: BILLING_INTERVALS,
     pricing: { configured: true, amount: 13000, currency: PLAN_CURRENCY, interval: "monthly" },
   },
@@ -218,6 +249,19 @@ export function capabilitiesFor(plan: SubscriptionPlan): Capability[] {
 /** The plan's limit for a key, or `null` if the plan has no limit for it (unlimited). */
 export function limitFor(plan: SubscriptionPlan, key: LimitKey): number | null {
   return PLANS[plan].limits[key] ?? null;
+}
+
+/**
+ * Mission 038 — the limit that actually applies right now: the plan's own limit, lowered by the trial
+ * allowance when the (effective) status is "trialing". `null` still means unlimited. Always call this with
+ * the *effective* status (EntitlementService resolves it) so an elapsed trial gets Starter's limits, not Pro's.
+ */
+export function effectiveLimitFor(plan: SubscriptionPlan, status: string, key: LimitKey): number | null {
+  const planLimit = limitFor(plan, key);
+  const trialLimit = status === "trialing" ? (TRIAL_LIMITS[key] ?? null) : null;
+  if (planLimit === null) return trialLimit;
+  if (trialLimit === null) return planLimit;
+  return Math.min(planLimit, trialLimit);
 }
 
 /** Mission 036 — true for any plan with a configured price above zero. Unconfigured pricing is never treated as paid (and never as free) by this helper. */

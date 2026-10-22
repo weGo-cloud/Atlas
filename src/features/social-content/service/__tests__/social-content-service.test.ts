@@ -124,7 +124,7 @@ describe("SocialContentService.generate — real photo, grounded caption, real r
     const photoUrl = await seedVehiclePhoto(vehicleId);
 
     const result = await getService(BUSINESS_A).generate({ itemType: "vehicle", itemId: vehicleId, templateId: "featured_item", photoUrl });
-    expect(result.ok).toBe(true);
+    expect(result.ok, result.ok ? undefined : `${result.error.code}: ${result.error.message}`).toBe(true);
     if (!result.ok) return;
 
     expect(result.data.status).toBe("draft");

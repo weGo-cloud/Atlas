@@ -1,55 +1,34 @@
 import { NextResponse } from "next/server";
 
-import { DatabaseBusinessRepository } from "@/features/auth/repository/database-business-repository";
 import { getConversionService } from "@/features/conversion/service";
+import { authenticatePublicApi, preflightResponse } from "@/features/conversion/lib/public-api-auth";
 
 /**
- * Mission 027 (correction) — the external-integration API's read
- * side: a dealer with their *own* website calls this from their site
- * (a build-time fetch, a client widget, whatever fits their stack) to
- * pull current inventory, instead of sending customers to the
- * Atlas-hosted storefront. Authenticated by `businesses.publicApiKey`
- * (Authorization: Bearer <key>), not a session — there is no
- * browser session here, this is a server-to-server or public-browser
- * call from a *different* origin, hence the permissive CORS headers
- * below (safe: the key only ever grants read-inventory/write-lead for
- * one business, nothing more sensitive — see schema.ts's doc comment
- * on the column).
+ * Mission 027 (correction) — the external-integration API's read side: a
+ * business with its *own* website pulls current inventory from here instead
+ * of sending customers to the Atlas-hosted storefront. Authenticated by the
+ * business's public API key (Authorization: Bearer <key>), not a session.
+ *
+ * Mission 037 — auth, rate limiting and the per-business browser-origin
+ * allowlist live in features/conversion/lib/public-api-auth.ts. The key
+ * only ever grants read-inventory/write-lead for one business.
  */
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type",
-};
+const METHODS = "GET, OPTIONS";
 
 export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+  return preflightResponse(METHODS);
 }
 
 export async function GET(request: Request) {
-  const apiKey = bearerToken(request);
-  if (!apiKey) {
-    return NextResponse.json({ error: "Missing API key." }, { status: 401, headers: CORS_HEADERS });
-  }
-
-  const businessRepository = new DatabaseBusinessRepository();
-  const business = await businessRepository.getByPublicApiKey(apiKey);
-  if (!business) {
-    return NextResponse.json({ error: "Invalid API key." }, { status: 401, headers: CORS_HEADERS });
-  }
+  const auth = await authenticatePublicApi(request, METHODS, { perIpPerMinute: 120, perKeyPerMinute: 60 }, "inventory");
+  if (!auth.ok) return auth.response;
 
   const conversionService = getConversionService();
-  const channelResult = await conversionService.resolveChannel(business.id, "external_integration");
+  const channelResult = await conversionService.resolveChannel(auth.business.id, "external_integration");
   if (!channelResult.ok) {
-    return NextResponse.json({ error: channelResult.error.message }, { status: 403, headers: CORS_HEADERS });
+    return NextResponse.json({ error: channelResult.error.message }, { status: 403, headers: auth.cors });
   }
 
   const { items } = await conversionService.getPublicCatalog(channelResult.data);
-  return NextResponse.json({ items }, { headers: CORS_HEADERS });
-}
-
-function bearerToken(request: Request): string | null {
-  const header = request.headers.get("authorization") ?? "";
-  const match = /^Bearer\s+(.+)$/i.exec(header);
-  return match ? match[1].trim() : null;
+  return NextResponse.json({ items }, { headers: auth.cors });
 }

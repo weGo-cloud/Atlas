@@ -26,6 +26,8 @@ const UNAVAILABLE_TEXT: Record<UnavailableReason, string> = {
   unsupported_vertical: "Atlas Assistant currently supports furniture businesses.",
   disabled: "The assistant is switched off. Turn it on in Settings.",
   not_configured: "The AI isn't configured yet: set ANTHROPIC_API_KEY on the server. Until then customers won't see the chat, and nothing pretends to be AI.",
+  limit_reached: "The assistant has reached today's message allowance for your plan and will resume tomorrow. Customers are being asked to use the enquiry form or contact you directly.",
+  not_in_plan: "The customer assistant isn't included in your current plan. Upgrade to Growth or Pro to switch it on.",
 };
 
 const STATE_VARIANT = { bot: "intelligence", human: "warning", closed: "default" } as const;
@@ -73,6 +75,7 @@ export default async function AssistantPage({ searchParams }: { searchParams: Pr
   const repo = service.repo;
 
   const availability = await service.getAvailability();
+  const usage = await service.getUsageToday();
   const metrics = await repo.metrics();
 
   const channel = CONVERSATION_CHANNELS.find((value) => value === params.channel) as ConversationChannel | undefined;
@@ -89,6 +92,9 @@ export default async function AssistantPage({ searchParams }: { searchParams: Pr
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <CheckCircle2 aria-hidden="true" className="h-4 w-4 text-success" />
           The assistant is live for customers.
+          <span className="text-xs">
+            Today: {usage.used} of {usage.cap} customer messages used (resets at midnight UTC).
+          </span>
         </p>
       ) : (
         <div role="status" className="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm text-foreground">

@@ -64,7 +64,7 @@ describe("capabilitiesFor", () => {
   });
 
   it("returns exactly the capabilities a plan is entitled to", () => {
-    expect(new Set(capabilitiesFor("growth"))).toEqual(new Set(["storefront", "external_integration"]));
+    expect(new Set(capabilitiesFor("growth"))).toEqual(new Set(["storefront", "external_integration", "assistant", "mpesa_collection"]));
     expect(new Set(capabilitiesFor("pro"))).toEqual(new Set(CAPABILITIES));
   });
 });

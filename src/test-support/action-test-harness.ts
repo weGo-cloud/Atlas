@@ -72,7 +72,7 @@ export class ActionTestHarness {
     // sales.customerId both default to RESTRICT (see schema.ts), so
     // any sale row must be gone before deals/customers are deleted.
     this.db.exec(
-      "DELETE FROM sales; DELETE FROM sessions; DELETE FROM activities; DELETE FROM deals; DELETE FROM leads; DELETE FROM vehicle_photos; DELETE FROM customers; DELETE FROM vehicles; DELETE FROM users; DELETE FROM subscriptions; DELETE FROM businesses;"
+      "DELETE FROM ai_usage_counters; DELETE FROM marketing_channel_connections; DELETE FROM assistant_messages; DELETE FROM assistant_conversations; DELETE FROM assistant_settings; DELETE FROM sales; DELETE FROM sessions; DELETE FROM activities; DELETE FROM deals; DELETE FROM leads; DELETE FROM vehicle_photos; DELETE FROM customers; DELETE FROM vehicles; DELETE FROM users; DELETE FROM subscriptions; DELETE FROM businesses;"
     );
     __clearTestCookies();
     this.counter = 0;

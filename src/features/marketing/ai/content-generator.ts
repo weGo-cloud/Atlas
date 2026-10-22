@@ -1,6 +1,7 @@
 import type { GroundedFacts } from "../domain/grounded-facts";
 import { buildFactsPromptBlock, buildTemplateBlurb } from "../domain/marketing-copy";
 import type { GenerationMethod } from "../domain/marketing-content";
+import { reserveGlobalAiCall } from "@/lib/ai/spend-guard";
 
 export type GeneratedBlurb = { method: GenerationMethod; blurb: string };
 
@@ -36,6 +37,10 @@ export class AnthropicContentGenerator implements ContentGenerator {
   constructor(private readonly apiKey: string, private readonly model = "claude-haiku-4-5-20251001") {}
 
   async generateBlurb(facts: GroundedFacts): Promise<GeneratedBlurb> {
+    // Mission 037 — global daily cap on outbound Anthropic calls (fail closed).
+    if (!(await reserveGlobalAiCall())) {
+      throw new AiGenerationError("AI content generation has reached its daily limit. Please try again tomorrow.");
+    }
     let response: Response;
     try {
       response = await fetch("https://api.anthropic.com/v1/messages", {

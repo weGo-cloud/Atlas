@@ -6,6 +6,7 @@ import {
   type LlmTextBlock,
   type LlmToolUseBlock,
 } from "./llm-client";
+import { reserveGlobalAiCall } from "@/lib/ai/spend-guard";
 
 export const DEFAULT_ASSISTANT_MODEL = "claude-sonnet-5";
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -22,6 +23,10 @@ export class AnthropicLlmClient implements LlmClient {
   ) {}
 
   async complete(request: LlmRequest): Promise<LlmResponse> {
+    // Mission 037 — global daily cap on outbound Anthropic calls (fail closed).
+    if (!(await reserveGlobalAiCall())) {
+      throw new LlmError("The AI service has reached its daily limit. Please try again tomorrow.", "UNAVAILABLE");
+    }
     let response: Response;
     try {
       response = await fetch("https://api.anthropic.com/v1/messages", {

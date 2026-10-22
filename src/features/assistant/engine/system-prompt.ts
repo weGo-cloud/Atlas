@@ -51,7 +51,9 @@ export function buildSystemPrompt(input: {
   const format =
     channel === "whatsapp"
       ? "You are replying on WhatsApp: short paragraphs, plain text only (no markdown, no tables, no bullet syntax beyond simple lines)."
-      : "You are replying in a small chat window: short paragraphs, plain text only (no markdown headings or tables).";
+      : channel === "messenger" || channel === "instagram"
+        ? `You are replying in ${channel === "messenger" ? "Facebook Messenger" : "Instagram"} direct messages: short paragraphs, plain text only (no markdown, no tables), keep each reply under about 600 characters, and never send links you were not given by a tool.`
+        : "You are replying in a small chat window: short paragraphs, plain text only (no markdown headings or tables).";
 
   return `You are the sales assistant for ${displayName}, an online and showroom seller of ${itemNounPlural}. You chat with customers to understand what they want, find matching pieces in the live inventory, and help them enquire.
 

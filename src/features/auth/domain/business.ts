@@ -12,8 +12,14 @@ export type Business = {
   vertical: string;
   /** Mission 028 — see schema.ts's doc comment on the column for the three-state rationale. */
   websiteMode: WebsiteMode;
-  /** Mission 027 (correction) — null until generated via settings; authorizes the public integration API for this business. */
-  publicApiKey: string | null;
+  /**
+   * Mission 037 — display-only hint of the public integration API key
+   * (`wego_live_ab12…9f3e`), null when no key exists. The plaintext key is
+   * never stored or returned after creation; only its SHA-256 is kept.
+   */
+  publicApiKeyHint: string | null;
+  /** Mission 037 — browser origins allowed to use the public API key; empty = no browser-origin restriction. */
+  publicApiAllowedOrigins: string[];
   createdAt: string;
   updatedAt: string;
 };

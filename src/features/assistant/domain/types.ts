@@ -2,12 +2,14 @@
  * Mission 033 — Atlas Assistant domain types. Channel-agnostic: nothing
  * here knows about HTTP, WhatsApp payloads, or any one vertical.
  */
-export const CONVERSATION_CHANNELS = ["website_chat", "whatsapp", "simulated"] as const;
+export const CONVERSATION_CHANNELS = ["website_chat", "whatsapp", "messenger", "instagram", "simulated"] as const;
 export type ConversationChannel = (typeof CONVERSATION_CHANNELS)[number];
 
 export const CONVERSATION_CHANNEL_LABEL: Record<ConversationChannel, string> = {
   website_chat: "Website chat",
   whatsapp: "WhatsApp",
+  messenger: "Messenger",
+  instagram: "Instagram",
   simulated: "Demo simulation",
 };
 
@@ -105,6 +107,10 @@ export type AssistantSettings = {
   tone: AssistantTone;
   handoffTopics: string | null;
   whatsappPhoneNumberId: string | null;
+  /** Mission 039 — Facebook Page id for Messenger (and the Page an Instagram account is linked to). */
+  metaPageId: string | null;
+  /** Mission 039 — Instagram professional account id for Instagram DMs. */
+  instagramAccountId: string | null;
 };
 
 export type ProductCard = {

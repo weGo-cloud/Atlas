@@ -84,7 +84,11 @@ export async function sendDemoMessageAction(input: { text: string; conversationI
           ? "The AI isn't configured (ANTHROPIC_API_KEY is missing)."
           : outcome.reason === "disabled"
             ? "The assistant is switched off in Assistant settings."
-            : "The assistant isn't available for this business.",
+            : outcome.reason === "not_in_plan"
+              ? "The customer assistant isn't included in your current plan."
+              : outcome.reason === "limit_reached"
+                ? "Today's assistant message allowance for your plan is used up. It resets at midnight UTC."
+                : "The assistant isn't available for this business.",
     };
   }
   const { result } = outcome;

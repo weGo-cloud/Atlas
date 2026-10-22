@@ -57,7 +57,16 @@ export async function POST(request: Request) {
       conversationId,
       text: message,
     });
-    if (!outcome.ok) return NextResponse.json({ error: "Chat isn't available right now." }, { status: 404 });
+    if (!outcome.ok) {
+      // Mission 038 — at the plan's daily allowance, say so honestly and point customers at the human path.
+      if (outcome.reason === "limit_reached") {
+        return NextResponse.json(
+          { error: "Our assistant has reached its limit for today. Please use the enquiry form or contact us directly and the team will reply personally." },
+          { status: 503 }
+        );
+      }
+      return NextResponse.json({ error: "Chat isn't available right now." }, { status: 404 });
+    }
     const { result } = outcome;
     return NextResponse.json({
       conversationId: result.conversationId,

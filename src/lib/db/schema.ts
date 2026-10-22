@@ -628,6 +628,22 @@ export const businesses = sqliteTable("businesses", {
    * switching modes).
    */
   publicApiKey: text("public_api_key").unique(),
+  /**
+   * Mission 037 — SHA-256 of the public API key. The plaintext
+   * `publicApiKey` column above is legacy: it is nulled by the 0021
+   * backfill / lazy upgrade and never written again (SQLite can't drop a
+   * UNIQUE column in place, so it stays, empty). Lookups go through this.
+   */
+  publicApiKeyHash: text("public_api_key_hash").unique(),
+  /** Mission 037 — display-only `wego_live_ab12…9f3e`; never usable as a credential. */
+  publicApiKeyHint: text("public_api_key_hint"),
+  /**
+   * Mission 037 — JSON array of browser origins allowed to call the
+   * public API with this business's key. Empty/null = no browser-origin
+   * restriction (server-to-server calls carry no Origin header and are
+   * always governed by the key alone).
+   */
+  publicApiAllowedOrigins: text("public_api_allowed_origins"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(current_timestamp)`),
@@ -913,34 +929,6 @@ export const marketingPublications = sqliteTable(
 export type MarketingPublicationRow = typeof marketingPublications.$inferSelect;
 export type NewMarketingPublicationRow = typeof marketingPublications.$inferInsert;
 
-export const socialPosts = sqliteTable(
-  "social_posts",
-  {
-    id: text("id").primaryKey(),
-    businessId: text("business_id")
-      .notNull()
-      .references(() => businesses.id),
-    itemType: text("item_type").notNull(),
-    itemId: text("item_id").notNull(),
-    templateId: text("template_id").notNull(),
-    photoUrl: text("photo_url").notNull(),
-    caption: text("caption").notNull(),
-    imageUrl: text("image_url").notNull(),
-    status: text("status").notNull().default("draft"),
-    createdAt: text("created_at")
-      .notNull()
-      .default(sql`(current_timestamp)`),
-    approvedAt: text("approved_at"),
-  },
-  (table) => [
-    index("social_posts_business_created_idx").on(table.businessId, table.createdAt),
-    index("social_posts_business_item_idx").on(table.businessId, table.itemType, table.itemId),
-  ]
-);
-
-export type SocialPostRow = typeof socialPosts.$inferSelect;
-export type NewSocialPostRow = typeof socialPosts.$inferInsert;
-
 /**
  * Mission 033 — Atlas Assistant. One row per customer conversation on
  * one channel. `customerKey` is the WhatsApp phone number, or an
@@ -1023,13 +1011,259 @@ export const assistantSettings = sqliteTable(
     handoffTopics: text("handoff_topics"),
     /** Maps an inbound WhatsApp Cloud API `phone_number_id` to this business. */
     whatsappPhoneNumberId: text("whatsapp_phone_number_id"),
+    /** Mission 039 — maps an inbound Messenger webhook `entry.id` (a Facebook Page id) to this business. Unique: a Page belongs to exactly one business. */
+    metaPageId: text("meta_page_id"),
+    /** Mission 039 — maps an inbound Instagram DM webhook `entry.id` (the Instagram professional account id) to this business. Requires `metaPageId` (the Page it is linked to). */
+    instagramAccountId: text("instagram_account_id"),
     updatedAt: text("updated_at")
       .notNull()
       .default(sql`(current_timestamp)`),
   },
-  (table) => [uniqueIndex("assistant_settings_wa_phone_unique").on(table.whatsappPhoneNumberId)]
+  (table) => [
+    uniqueIndex("assistant_settings_wa_phone_unique").on(table.whatsappPhoneNumberId),
+    uniqueIndex("assistant_settings_meta_page_unique").on(table.metaPageId),
+    uniqueIndex("assistant_settings_ig_account_unique").on(table.instagramAccountId),
+  ]
 );
 
 export type AssistantConversationRow = typeof assistantConversations.$inferSelect;
 export type AssistantMessageRow = typeof assistantMessages.$inferSelect;
 export type AssistantSettingsRow = typeof assistantSettings.$inferSelect;
+
+/**
+ * Mission 034 — a generated, staff-reviewed image + caption post for
+ * one real inventory item. `item_type`/`item_id` mirror the M031
+ * marketing_content table's generic item reference (never a
+ * vehicle_id/furniture_product_id column pair — see
+ * marketing/domain/marketing-item-ref.ts). One row per generated
+ * image; approving is a status flip, not a new row, so re-generating
+ * before approval simply replaces the draft (see the repository).
+ */
+export const socialPosts = sqliteTable(
+  "social_posts",
+  {
+    id: text("id").primaryKey(),
+    businessId: text("business_id")
+      .notNull()
+      .references(() => businesses.id),
+    itemType: text("item_type").notNull(),
+    itemId: text("item_id").notNull(),
+    templateId: text("template_id").notNull(),
+    photoUrl: text("photo_url").notNull(),
+    caption: text("caption").notNull(),
+    imageUrl: text("image_url").notNull(),
+    /** "square" | "portrait" | "story" (Mission 035). */
+    format: text("format").notNull().default("square"),
+    /** "draft" | "approved" | "scheduled" | "posted". */
+    status: text("status").notNull().default("draft"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+    approvedAt: text("approved_at"),
+    /** Mission 035 — ISO-8601 UTC instant staff plan to post. Kept after posting as the original plan. */
+    scheduledFor: text("scheduled_for"),
+    /** "facebook" | "instagram" | "whatsapp_status" | "tiktok" | "other" — set while scheduled. */
+    channel: text("channel"),
+    postedAt: text("posted_at"),
+  },
+  (table) => [
+    index("social_posts_business_created_idx").on(table.businessId, table.createdAt),
+    index("social_posts_business_item_idx").on(table.businessId, table.itemType, table.itemId),
+    index("social_posts_business_status_scheduled_idx").on(table.businessId, table.status, table.scheduledFor),
+  ]
+);
+
+export type SocialPostRow = typeof socialPosts.$inferSelect;
+
+
+/**
+ * Mission 037 — atomic daily counters that cap paid AI calls. One row per
+ * (scope, day): scope is "global" or a business id. Incremented with a
+ * single guarded upsert (see lib/ai/spend-guard.ts) so concurrent requests
+ * can never overshoot the cap.
+ */
+export const aiUsageCounters = sqliteTable(
+  "ai_usage_counters",
+  {
+    scope: text("scope").notNull(),
+    day: text("day").notNull(),
+    calls: integer("calls").notNull().default(0),
+  },
+  (table) => [uniqueIndex("ai_usage_counters_scope_day_unique").on(table.scope, table.day)]
+);
+
+
+/**
+ * Mission 040 — the customer payments ledger. One row per money movement against a customer (optionally a deal).
+ * Append-mostly: a confirmed payment is never edited or deleted; it can only be REVERSED (status + reason + who),
+ * and refunds are their own rows, so the history always explains the balance. Amounts are whole shillings (KES).
+ */
+export const payments = sqliteTable(
+  "payments",
+  {
+    id: text("id").primaryKey(),
+    businessId: text("business_id")
+      .notNull()
+      .references(() => businesses.id),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id),
+    /** Optional: when set, the payment counts toward that deal's balance. Validated in PaymentService (same business, same customer). */
+    dealId: text("deal_id").references(() => deals.id, { onDelete: "set null" }),
+    amount: integer("amount").notNull(),
+    currency: text("currency").notNull().default("KES"),
+    /** cash | mpesa | airtel_money | bank_transfer | cheque | card | financing | trade_in | other */
+    method: text("method").notNull(),
+    /** deposit | installment | balance | full_payment | refund */
+    kind: text("kind").notNull().default("installment"),
+    /** pending | confirmed | failed | cancelled | reversed */
+    status: text("status").notNull().default("confirmed"),
+    /** M-Pesa receipt code, bank reference, cheque number, card slip no. Unique per (business, method) when present, so one receipt can't be recorded twice. */
+    reference: text("reference"),
+    payerPhone: text("payer_phone"),
+    payerName: text("payer_name"),
+    /** Free-text label of what is being paid for (snapshot), for payments not tied to a deal. */
+    itemLabel: text("item_label"),
+    paidAt: text("paid_at").notNull(),
+    notes: text("notes").notNull().default(""),
+    recordedByUserId: text("recorded_by_user_id"),
+    /** M-Pesa STK push correlation ids (Daraja). */
+    checkoutRequestId: text("checkout_request_id"),
+    merchantRequestId: text("merchant_request_id"),
+    failureReason: text("failure_reason"),
+    reversedAt: text("reversed_at"),
+    reversedReason: text("reversed_reason"),
+    reversedByUserId: text("reversed_by_user_id"),
+    /** provider = confirmed by Safaricom (STK callback + STK query); manual = typed in by staff, unverified evidence. Never upgraded by hand. */
+    verification: text("verification").notNull().default("manual"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+  },
+  (table) => [
+    index("payments_business_id_idx").on(table.businessId),
+    index("payments_deal_id_idx").on(table.dealId),
+    index("payments_customer_id_idx").on(table.customerId),
+    uniqueIndex("payments_business_method_reference_unique")
+      .on(table.businessId, table.method, table.reference)
+      .where(sql`${table.reference} is not null`),
+    uniqueIndex("payments_checkout_request_unique")
+      .on(table.checkoutRequestId)
+      .where(sql`${table.checkoutRequestId} is not null`),
+  ]
+);
+
+/**
+ * Mission 040 — a business's own M-Pesa (Safaricom Daraja) credentials, so STK-push payments go straight to THEIR
+ * till/paybill, never through Atlas. Secrets are AES-256-GCM encrypted (Mission 037 secret box). `callbackToken` is the
+ * unguessable path segment of the per-business callback URL; a callback is additionally confirmed with Daraja's STK query.
+ */
+export const paymentAccounts = sqliteTable(
+  "payment_accounts",
+  {
+    businessId: text("business_id")
+      .primaryKey()
+      .references(() => businesses.id),
+    provider: text("provider").notNull().default("mpesa_daraja"),
+    /** sandbox | production */
+    environment: text("environment").notNull().default("sandbox"),
+    /** Daraja BusinessShortCode (paybill number, or the store number for a till). */
+    shortcode: text("shortcode").notNull(),
+    /** Buy-goods till number (Daraja PartyB) when different from the store number; null for paybill. */
+    tillNumber: text("till_number"),
+    /** paybill | till */
+    transactionType: text("transaction_type").notNull().default("paybill"),
+    consumerKeyEnc: text("consumer_key_enc").notNull(),
+    consumerSecretEnc: text("consumer_secret_enc").notNull(),
+    passkeyEnc: text("passkey_enc").notNull(),
+    callbackToken: text("callback_token").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+  },
+  (table) => [uniqueIndex("payment_accounts_callback_token_unique").on(table.callbackToken)]
+);
+
+export type PaymentRow = typeof payments.$inferSelect;
+export type PaymentAccountRow = typeof paymentAccounts.$inferSelect;
+
+/**
+ * Mission 040 — append-only audit trail for everything that touches money or payment credentials: payments recorded,
+ * STK prompts sent, callbacks applied/rejected, reversals, M-Pesa account connect/disconnect. Rows are never updated or
+ * deleted (enforced by triggers in migration 0023). `detail` is small JSON and never contains secrets.
+ */
+export const paymentEvents = sqliteTable(
+  "payment_events",
+  {
+    id: text("id").primaryKey(),
+    businessId: text("business_id")
+      .notNull()
+      .references(() => businesses.id),
+    paymentId: text("payment_id"),
+    actorUserId: text("actor_user_id"),
+    action: text("action").notNull(),
+    detail: text("detail").notNull().default("{}"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+  },
+  (table) => [index("payment_events_business_id_idx").on(table.businessId), index("payment_events_payment_id_idx").on(table.paymentId)]
+);
+export type PaymentEventRow = typeof paymentEvents.$inferSelect;
+
+
+/**
+ * Mission 041 — Atlas's own subscription invoices (what a business pays Atlas for its plan), collected by M-Pesa.
+ * Invariants enforced in the database, not just in code: at most ONE open invoice per business; a checkout request id and
+ * an M-Pesa receipt can each settle at most one invoice; amounts/plans/periods never change after creation; paid or
+ * closed invoices never change status again; nothing is ever deleted (migration 0024 triggers).
+ */
+export const billingInvoices = sqliteTable(
+  "billing_invoices",
+  {
+    id: text("id").primaryKey(),
+    businessId: text("business_id")
+      .notNull()
+      .references(() => businesses.id),
+    plan: text("plan").notNull(),
+    /** Whole KES, taken from the code-defined plan catalog at creation. Never from the client. */
+    amount: integer("amount").notNull(),
+    currency: text("currency").notNull().default("KES"),
+    /** upgrade = business chose/paid for a plan now; renewal = auto-generated before the current period ends. */
+    kind: text("kind").notNull(),
+    /** open | paid | uncollectible | void */
+    status: text("status").notNull().default("open"),
+    periodStart: text("period_start").notNull(),
+    periodEnd: text("period_end").notNull(),
+    dueAt: text("due_at").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    lastAttemptAt: text("last_attempt_at"),
+    checkoutRequestId: text("checkout_request_id"),
+    merchantRequestId: text("merchant_request_id"),
+    payerPhone: text("payer_phone"),
+    /** none | pending | failed: the state of the latest M-Pesa prompt for an open invoice. */
+    paymentState: text("payment_state").notNull().default("none"),
+    receipt: text("receipt"),
+    failureReason: text("failure_reason"),
+    paidAt: text("paid_at"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+  },
+  (table) => [
+    index("billing_invoices_business_id_idx").on(table.businessId),
+    uniqueIndex("billing_invoices_one_open_per_business").on(table.businessId).where(sql`${table.status} = 'open'`),
+    uniqueIndex("billing_invoices_checkout_unique").on(table.checkoutRequestId).where(sql`${table.checkoutRequestId} is not null`),
+    uniqueIndex("billing_invoices_receipt_unique").on(table.receipt).where(sql`${table.receipt} is not null`),
+  ]
+);
+export type BillingInvoiceRow = typeof billingInvoices.$inferSelect;

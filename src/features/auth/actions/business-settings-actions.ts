@@ -1,16 +1,16 @@
 "use server";
 
-import { randomBytes } from "node:crypto";
-
 import { revalidatePath } from "next/cache";
 
 import { requireCurrentSession } from "../lib/current-session";
 import { ForbiddenError, requirePermission } from "../domain/permissions";
 import { DatabaseBusinessRepository } from "../repository/database-business-repository";
 import type { Business, WebsiteMode } from "../domain/business";
+import { normalizeAllowedOrigins } from "../domain/api-origins";
+import { generatePublicApiKey } from "@/lib/security/api-key";
 
 export type BusinessSettingsActionResult =
-  | { ok: true; business: Business }
+  | { ok: true; business: Business; /** Mission 037 — present ONLY on key generation/rotation: the one time the plaintext key is ever shown. */ newApiKey?: string }
   | { ok: false; error: { message: string } };
 
 /**
@@ -25,7 +25,7 @@ export type BusinessSettingsActionResult =
  *
  * Plan/subscription changes are deliberately NOT here — see
  * entitlements/repository/subscription-repository.ts. This file only
- * ever writes `businesses` columns (websiteMode, publicApiKey), never
+ * ever writes `businesses` columns (websiteMode, public API key hash, allowed origins), never
  * `subscriptions` columns, matching Mission 028's plan-vs-subscription
  * separation of concerns at the write-path level too, not just the
  * schema level.
@@ -71,13 +71,13 @@ export async function regeneratePublicApiKeyAction(): Promise<BusinessSettingsAc
     throw error;
   }
 
-  const apiKey = `wego_live_${randomBytes(24).toString("hex")}`;
+  const apiKey = generatePublicApiKey();
   const repository = new DatabaseBusinessRepository();
-  const business = await repository.updateSettings(session.business.id, { publicApiKey: apiKey });
+  const business = await repository.setPublicApiKey(session.business.id, apiKey);
   if (!business) return { ok: false, error: { message: "Business not found." } };
 
   revalidatePath("/app/settings");
-  return { ok: true, business };
+  return { ok: true, business, newApiKey: apiKey };
 }
 
 export async function revokePublicApiKeyAction(): Promise<BusinessSettingsActionResult> {
@@ -90,7 +90,28 @@ export async function revokePublicApiKeyAction(): Promise<BusinessSettingsAction
   }
 
   const repository = new DatabaseBusinessRepository();
-  const business = await repository.updateSettings(session.business.id, { publicApiKey: null });
+  const business = await repository.clearPublicApiKey(session.business.id);
+  if (!business) return { ok: false, error: { message: "Business not found." } };
+
+  revalidatePath("/app/settings");
+  return { ok: true, business };
+}
+
+/** Mission 037 — which browser origins may use the public API key (owner-only, like the other settings). */
+export async function setPublicApiOriginsAction(origins: string[]): Promise<BusinessSettingsActionResult> {
+  let session;
+  try {
+    session = await requireBusinessManage();
+  } catch (error) {
+    if (error instanceof PermissionDenied) return { ok: false, error: { message: error.message } };
+    throw error;
+  }
+
+  const normalized = normalizeAllowedOrigins(origins);
+  if (!normalized.ok) return { ok: false, error: { message: normalized.message } };
+
+  const repository = new DatabaseBusinessRepository();
+  const business = await repository.updateSettings(session.business.id, { publicApiAllowedOrigins: normalized.origins });
   if (!business) return { ok: false, error: { message: "Business not found." } };
 
   revalidatePath("/app/settings");

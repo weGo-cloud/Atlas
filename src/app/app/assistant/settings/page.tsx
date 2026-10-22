@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { requireCurrentSession } from "@/features/auth/lib/current-session";
 import { saveAssistantSettingsAction } from "@/features/assistant/actions/assistant-actions";
 import { getAssistantService } from "@/features/assistant/service/assistant-service";
+import { MetaConnectCard } from "@/features/assistant/components/meta-connect-card";
 
 export const metadata = { title: "Assistant settings" };
 
@@ -20,13 +21,14 @@ function Field({ id, label, hint, children }: { id: string; label: string; hint?
   );
 }
 
-export default async function AssistantSettingsPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
-  const { saved } = await searchParams;
+export default async function AssistantSettingsPage({ searchParams }: { searchParams: Promise<{ saved?: string; meta?: string; meta_error?: string }> }) {
+  const { saved, meta, meta_error: metaError } = await searchParams;
   const { business } = await requireCurrentSession();
   const settings = await getAssistantService(business.id).getSettings();
 
   return (
-    <form action={saveAssistantSettingsAction} className="flex max-w-3xl flex-col gap-6">
+    <div className="flex max-w-3xl flex-col gap-6">
+    <form action={saveAssistantSettingsAction} className="flex flex-col gap-6">
       {saved ? (
         <p role="status" className="rounded-md border border-success/25 bg-success/10 px-3 py-2 text-sm text-success">
           Settings saved.
@@ -104,5 +106,13 @@ export default async function AssistantSettingsPage({ searchParams }: { searchPa
         <Button type="submit">Save settings</Button>
       </div>
     </form>
+    <MetaConnectCard
+      pageId={settings.metaPageId}
+      instagramAccountId={settings.instagramAccountId}
+      notice={meta === "connected" ? "Connected. Customer messages to this Page will now be answered by the assistant." : meta === "disconnected" ? "Disconnected." : null}
+      error={metaError ? metaError.slice(0, 240) : null}
+      serverReady={Boolean(process.env.META_APP_SECRET)}
+    />
+    </div>
   );
 }

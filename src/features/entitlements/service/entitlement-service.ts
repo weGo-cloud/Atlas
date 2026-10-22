@@ -1,4 +1,4 @@
-import { limitFor, type Capability, type LimitKey } from "../domain/plan";
+import { effectiveLimitFor, type Capability, type LimitKey } from "../domain/plan";
 import { evaluateCapabilityAccess, evaluateLimit, type AccessDecision, type LimitDecision } from "../domain/access";
 import { accessLevelForStatus, type AccessLevel } from "../domain/access-policy";
 import { resolveEffectiveSubscription, type EffectiveSubscription, type Subscription } from "../domain/subscription";
@@ -108,7 +108,7 @@ export class EntitlementService {
     if (accessLevelForStatus(effective.status) === "locked") {
       return { ok: false, reason: "SUBSCRIPTION_INACTIVE" };
     }
-    return { ok: true, limit: limitFor(effective.plan, key) };
+    return { ok: true, limit: effectiveLimitFor(effective.plan, effective.status, key) };
   }
 }
 

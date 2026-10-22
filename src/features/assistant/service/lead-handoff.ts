@@ -1,11 +1,13 @@
 import { getCustomerService } from "@/features/customers/service";
 import { getLeadService } from "@/features/leads/service";
 import type { LeadHandoff, LeadHandoffInput } from "../domain/ports";
-import type { ConversationChannel } from "../domain/types";
+import { CONVERSATION_CHANNEL_LABEL, type ConversationChannel } from "../domain/types";
 
 const LEAD_SOURCE: Record<ConversationChannel, string> = {
   website_chat: "website_chat",
   whatsapp: "whatsapp",
+  messenger: "messenger",
+  instagram: "instagram",
   simulated: "assistant_demo",
 };
 
@@ -39,7 +41,7 @@ export class ServiceLeadHandoff implements LeadHandoff {
     const customerResult = await getCustomerService(this.businessId).createCustomer({
       name: input.name,
       phone: input.phone,
-      notes: `Started via ${input.conversation.channel === "whatsapp" ? "WhatsApp" : "website chat"} with Atlas Assistant.`,
+      notes: `Started via ${CONVERSATION_CHANNEL_LABEL[input.conversation.channel] ?? "chat"} with Atlas Assistant.`,
     });
     if (!customerResult.ok) {
       return { error: customerResult.error.fieldErrors?.phone ?? customerResult.error.message };

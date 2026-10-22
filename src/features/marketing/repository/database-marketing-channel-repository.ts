@@ -14,6 +14,7 @@ import type {
   MarketingPublication,
   PublicationStatus,
 } from "../domain/marketing-channel";
+import { decryptSecret, encryptSecret, isEncryptedSecret, isEncryptionConfigured } from "@/lib/security/secret-box";
 
 export type UpsertConnectionInput = {
   channel: MarketingChannel;
@@ -55,7 +56,33 @@ export class DatabaseMarketingChannelRepository implements MarketingChannelRepos
     channel: MarketingChannel
   ): Promise<(MarketingChannelConnection & { accessToken: string | null }) | null> {
     const row = await this.getRow(channel);
-    return row ? { ...toConnection(row), accessToken: row.accessToken } : null;
+    if (!row) return null;
+    return { ...toConnection(row), accessToken: await this.readToken(row) };
+  }
+
+  /**
+   * Mission 037 — tokens are encrypted at rest (AES-256-GCM, see lib/security/secret-box.ts) and
+   * decrypted only here. A pre-037 plaintext token is still honoured once and re-encrypted in place
+   * as soon as an encryption key is configured. A token that fails to decrypt (wrong key/tampering)
+   * is treated as absent so the channel shows as needing attention instead of sending garbage.
+   */
+  private async readToken(row: { id: string; accessToken: string | null }): Promise<string | null> {
+    const stored = row.accessToken;
+    if (!stored) return null;
+    if (isEncryptedSecret(stored)) {
+      try {
+        return decryptSecret(stored);
+      } catch {
+        return null;
+      }
+    }
+    if (isEncryptionConfigured()) {
+      await db
+        .update(marketingChannelConnections)
+        .set({ accessToken: encryptSecret(stored), updatedAt: new Date().toISOString() })
+        .where(eq(marketingChannelConnections.id, row.id));
+    }
+    return stored;
   }
 
   async upsertConnection(input: UpsertConnectionInput): Promise<MarketingChannelConnection> {
@@ -68,7 +95,7 @@ export class DatabaseMarketingChannelRepository implements MarketingChannelRepos
         .set({
           status: input.status,
           ...(input.externalAccountLabel !== undefined ? { externalAccountLabel: input.externalAccountLabel } : {}),
-          ...(input.accessToken !== undefined ? { accessToken: input.accessToken } : {}),
+          ...(input.accessToken !== undefined ? { accessToken: input.accessToken === null ? null : encryptSecret(input.accessToken) } : {}),
           updatedAt: now,
         })
         .where(eq(marketingChannelConnections.id, existing.id));
@@ -79,7 +106,7 @@ export class DatabaseMarketingChannelRepository implements MarketingChannelRepos
         channel: input.channel,
         status: input.status,
         externalAccountLabel: input.externalAccountLabel ?? null,
-        accessToken: input.accessToken ?? null,
+        accessToken: input.accessToken ? encryptSecret(input.accessToken) : null,
         updatedAt: now,
       });
     }

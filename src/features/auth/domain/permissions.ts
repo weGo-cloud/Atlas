@@ -24,6 +24,11 @@ import type { UserRole } from "./user";
  *   rotates it; the storefront going live is a public-facing change),
  *   so it follows the same owner-only pattern as every other
  *   consequential/irreversible action here.
+ * - payment.reverse — Mission 040. Reversing a confirmed payment changes
+ *   what a customer is recorded as owing, which is money-trail-altering,
+ *   so it follows the same owner-only pattern as sale.create. Recording
+ *   a payment is NOT restricted (reception/sales staff take payments);
+ *   every row carries who recorded it.
  * - furniture_product.delete — Mission 030. Identical rationale to
  *   vehicle.delete: a destructive, irreversible inventory operation,
  *   restricted the same way for the same reason.
@@ -33,6 +38,7 @@ export const PERMISSIONS = [
   "sale.create",
   "business.manage",
   "furniture_product.delete",
+  "payment.reverse",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];

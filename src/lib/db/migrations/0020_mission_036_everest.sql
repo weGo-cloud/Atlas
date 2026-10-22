@@ -1,4 +1,4 @@
-CREATE TABLE `everest_audit_log` (
+CREATE TABLE IF NOT EXISTS `everest_audit_log` (
 	`id` text PRIMARY KEY NOT NULL,
 	`business_id` text NOT NULL,
 	`user_id` text NOT NULL,
@@ -13,8 +13,8 @@ CREATE TABLE `everest_audit_log` (
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
-CREATE INDEX `everest_audit_log_business_idx` ON `everest_audit_log` (`business_id`,`created_at`);--> statement-breakpoint
-CREATE TABLE `everest_conversations` (
+CREATE INDEX IF NOT EXISTS `everest_audit_log_business_idx` ON `everest_audit_log` (`business_id`,`created_at`);--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `everest_conversations` (
 	`id` text PRIMARY KEY NOT NULL,
 	`business_id` text NOT NULL,
 	`user_id` text NOT NULL,
@@ -25,8 +25,8 @@ CREATE TABLE `everest_conversations` (
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
-CREATE INDEX `everest_conversations_business_user_idx` ON `everest_conversations` (`business_id`,`user_id`);--> statement-breakpoint
-CREATE TABLE `everest_messages` (
+CREATE INDEX IF NOT EXISTS `everest_conversations_business_user_idx` ON `everest_conversations` (`business_id`,`user_id`);--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `everest_messages` (
 	`id` text PRIMARY KEY NOT NULL,
 	`business_id` text NOT NULL,
 	`user_id` text NOT NULL,
@@ -39,9 +39,9 @@ CREATE TABLE `everest_messages` (
 	FOREIGN KEY (`conversation_id`) REFERENCES `everest_conversations`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE INDEX `everest_messages_conversation_idx` ON `everest_messages` (`conversation_id`,`created_at`);--> statement-breakpoint
-CREATE INDEX `everest_messages_business_role_created_idx` ON `everest_messages` (`business_id`,`role`,`created_at`);--> statement-breakpoint
-CREATE TABLE `everest_pending_actions` (
+CREATE INDEX IF NOT EXISTS `everest_messages_conversation_idx` ON `everest_messages` (`conversation_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `everest_messages_business_role_created_idx` ON `everest_messages` (`business_id`,`role`,`created_at`);--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `everest_pending_actions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`business_id` text NOT NULL,
 	`user_id` text NOT NULL,
@@ -62,5 +62,5 @@ CREATE TABLE `everest_pending_actions` (
 	FOREIGN KEY (`conversation_id`) REFERENCES `everest_conversations`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE INDEX `everest_pending_actions_business_idx` ON `everest_pending_actions` (`business_id`);--> statement-breakpoint
-CREATE INDEX `everest_pending_actions_conversation_idx` ON `everest_pending_actions` (`conversation_id`);
+CREATE INDEX IF NOT EXISTS `everest_pending_actions_business_idx` ON `everest_pending_actions` (`business_id`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `everest_pending_actions_conversation_idx` ON `everest_pending_actions` (`conversation_id`);

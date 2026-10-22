@@ -2,12 +2,21 @@ import { failAuth, okAuth, type AuthResult } from "../domain/errors";
 import { SESSION_DURATION_MS } from "../domain/session";
 import type { User } from "../domain/user";
 import type { Business } from "../domain/business";
-import { verifyPassword } from "../lib/password";
+import { hashPassword, verifyPassword } from "../lib/password";
 import type { BusinessRepository } from "../repository/business-repository";
 import type { SessionRepository } from "../repository/session-repository";
 import type { UserRepository } from "../repository/user-repository";
 
 export type SignInResult = { token: string; user: User; business: Business };
+
+// Mission 037 — a real scrypt hash of a throwaway value, computed once. Verifying against it when
+// the email doesn't exist makes "unknown email" cost the same as "wrong password", so response
+// timing can't be used to enumerate which emails have accounts.
+let dummyHashPromise: Promise<string> | null = null;
+function getDummyHash(): Promise<string> {
+  dummyHashPromise ??= hashPassword("atlas-timing-equalizer");
+  return dummyHashPromise;
+}
 
 export class AuthService {
   constructor(
@@ -28,7 +37,10 @@ export class AuthService {
         message: "Invalid email or password.",
       });
 
-    if (!credentials) return invalidCredentials();
+    if (!credentials) {
+      await verifyPassword(password, await getDummyHash());
+      return invalidCredentials();
+    }
 
     const passwordValid = await verifyPassword(password, credentials.passwordHash);
     if (!passwordValid) return invalidCredentials();
