@@ -1,0 +1,14 @@
+atlas.yourdomain.com {
+    encode gzip
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+    # Allow larger photo uploads
+    request_body {
+        max_size 25MB
+    }
+    reverse_proxy app:3000
+}

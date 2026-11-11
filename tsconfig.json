@@ -30,5 +30,10 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "atlas-m036-to-m041-cumulative",
+    "atlas-m036-to-m044-cumulative",
+    "archive/patches"
+  ]
 }
